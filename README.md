@@ -11,6 +11,7 @@ Claude Code Chat 用的也是同一套底座。
 
 - 聊天界面（**逐字流式输出**，Markdown 代码块，按消息 id 去重避免重复）
 - **图形化权限审批**：`can_use_tool` 请求变成卡片，可选 允许 / 拒绝 / 始终允许
+- **用户选择弹窗（AskUserQuestion）**：模型提问时显示选项卡片，支持单选、多选、自由输入；答案通过 `updatedInput.answers` 回写，YOLO 模式下同样有效
 - 项目 + 会话侧栏：直接读 `~/.claude/projects/**/*.jsonl`，支持浏览与 `--resume`
 - **附件**：📎 选择、拖拽、剪贴板粘贴图片；非图片文件拖入会转成 `@路径` 引用
 - **斜杠命令补全**：扫描 `~/.claude/commands` 与 `<项目>/.claude/commands`；另带 4 个内置提示模板
@@ -65,6 +66,7 @@ ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" npm install
 | 图片附件（base64） | ✅ 发送 `screenshot.png`，模型正确识别主色调为「深灰色」 |
 | 真实按键回车发送 | ✅ 模拟键入 + Enter，消息发出并收到回复 |
 | 模型列表 / 会话内切换 | ✅ 读到 5 个模型；`set_model` 返回 success，界面提示已切换 |
+| 用户选择弹窗 | ✅ `AskUserQuestion` 卡片选择「面」后，CLI 收到 `updatedInput.answers` 并继续回复 |
 | 权限模式热切换 | ✅ `set_permission_mode` 返回 success；进程复用不重启 |
 | YOLO 模式 | ✅ 等旧进程退出后用 `--dangerously-skip-permissions` 重启，回复正常 |
 | 主题切换 | ✅ `system → dark → system` IPC 生效 |
@@ -84,11 +86,30 @@ CDS_E2E=1 npx electron .
 CDS_SHOT="D:/tmp/shot.png" npx electron .
 ```
 
+## 常见问题
+
+### 终端里的 `claude --resume` 看不到 GUI 中的会话
+
+这是 Claude Code CLI 的刻意行为，不是会话丢失。`/resume` 列表会过滤掉
+`entrypoint` 为 `sdk-cli` / `sdk-ts` / `sdk-py` 的会话；GUI 通过
+`--input-format stream-json`（SDK 模式）驱动 CLI，所以 GUI 会话都会被标记为
+`sdk-cli`，不会出现在交互式 `/resume` 选择器里。另外 `/resume` 默认按 git 分支过滤，
+其他分支上的会话需要按 `Ctrl+B` 切换为显示全部分支。
+
+会话本身已经完整写入 `~/.claude/projects/<项目目录>/<session-id>.jsonl`，
+可以直接按 ID 恢复：
+
+```bash
+claude --resume <session-id>
+```
+
+`<session-id>` 就是会话文件名去掉 `.jsonl`；GUI 侧栏中的会话也对应同一份文件。
+
 ## 打包
 
 ```bash
 npm run pack   # 解包版：dist/win-unpacked/Claude Desktop Lite.exe
-npm run dist   # NSIS 安装包：dist/Claude Desktop Lite Setup 0.4.0.exe
+npm run dist   # NSIS 安装包：dist/Claude Desktop Lite Setup 0.4.2.exe
 ```
 
 国内网络需要镜像：
@@ -109,8 +130,9 @@ Electron 主进程 (main.js)
   └─ spawn: claude --output-format stream-json --input-format stream-json
                     --verbose --permission-prompt-tool stdio [--resume <id>]
         ├─ stdout JSONL ──> 解析 system / assistant / user / result / control_request
-        ├─ control_request(can_use_tool) ──> IPC 给渲染进程弹卡片
-        └─ stdin <── {"type":"control_response", ... "behavior":"allow|deny"}
+        ├─ control_request(can_use_tool) ──> 权限卡片；AskUserQuestion ──> 选择弹窗
+        └─ stdin <── {"type":"control_response", ... "behavior":"allow|deny",
+                       "updatedInput": {..., "answers": {...}}}
 ```
 
 渲染进程不发任何文件系统调用，全部经 `preload.js` 暴露的最小 API 走 IPC。

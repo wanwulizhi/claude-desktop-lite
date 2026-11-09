@@ -44,6 +44,8 @@ const THEME_MODES = [
 ];
 let permQueue = [];
 let currentPerm = null;
+let questionQueue = [];
+let currentQuestion = null;
 const toolCards = new Map();
 
 // 流式渲染状态
@@ -761,6 +763,8 @@ function clearConversation() {
   window.api.stop();
   permQueue = [];
   hidePermission();
+  questionQueue = [];
+  hideQuestion();
   setRunning(false);
   resetStream();
   clearMessages();
@@ -914,6 +918,8 @@ async function openSession(s) {
   hideWorking();
   hidePermission();
   permQueue = [];
+  hideQuestion();
+  questionQueue = [];
 
   state = {
     ...state,
@@ -968,6 +974,8 @@ async function newChat() {
   hideWorking();
   hidePermission();
   permQueue = [];
+  hideQuestion();
+  questionQueue = [];
   const prevCwd = state.cwd; // 取消选择文件夹时继续沿用当前项目
   state = {
     ...state,
@@ -1040,6 +1048,188 @@ function respondPermission(approved, always) {
   showNextPermission();
 }
 
+// ---------------------------------------------------------------- 用户提问（AskUserQuestion）
+
+function enqueueQuestion(req) {
+  questionQueue.push(req);
+  if (!currentQuestion) showNextQuestion();
+}
+
+function showNextQuestion() {
+  const req = questionQueue.shift();
+  if (!req) {
+    $('question-overlay').hidden = true;
+    currentQuestion = null;
+    return;
+  }
+  currentQuestion = req;
+  renderQuestion(req);
+  $('question-overlay').hidden = false;
+  const first = $('q-body').querySelector('.q-option, .q-input');
+  if (first) first.focus();
+}
+
+function hideQuestion() {
+  $('question-overlay').hidden = true;
+  currentQuestion = null;
+}
+
+function renderQuestion(req) {
+  const body = $('q-body');
+  body.innerHTML = '';
+  $('q-title').textContent = (req.input && req.input.title) || 'Claude 想问你';
+
+  const questions = Array.isArray(req.questions) ? req.questions : [];
+  req.__fields = [];
+
+  questions.forEach((q, qi) => {
+    const block = document.createElement('div');
+    block.className = 'q-block';
+
+    const head = document.createElement('div');
+    head.className = 'q-head';
+    if (q.header) {
+      const chip = document.createElement('span');
+      chip.className = 'q-chip';
+      chip.textContent = String(q.header).slice(0, 20);
+      head.appendChild(chip);
+    }
+    const text = document.createElement('div');
+    text.className = 'q-text';
+    text.textContent = q.question || `问题 ${qi + 1}`;
+    head.appendChild(text);
+    block.appendChild(head);
+
+    const kind = q.kind || 'choice';
+
+    // 开放式问题（text/number）直接输入；没有选项的 choice 也按文本处理
+    if (kind === 'text' || kind === 'number' || !Array.isArray(q.options) || q.options.length === 0) {
+      const input = document.createElement('input');
+      input.className = 'q-input';
+      if (kind === 'number') {
+        input.type = 'number';
+        if (Number.isFinite(q.min)) input.min = String(q.min);
+        if (Number.isFinite(q.max)) input.max = String(q.max);
+        if (Number.isFinite(q.step)) input.step = String(q.step);
+        if (Number.isFinite(q.defaultValue)) input.value = String(q.defaultValue);
+      } else {
+        input.type = 'text';
+        if (q.placeholder) input.placeholder = String(q.placeholder);
+      }
+      block.appendChild(input);
+      req.__fields.push({ question: q.question, type: 'text', input });
+    } else {
+      const multi = q.multiSelect === true;
+      const optionsEl = document.createElement('div');
+      optionsEl.className = 'q-options';
+      const buttons = [];
+
+      for (const opt of q.options) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'q-option';
+        btn.dataset.label = String(opt.label || '');
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'q-option-label';
+        labelEl.textContent = String(opt.label || '');
+        btn.appendChild(labelEl);
+
+        if (opt.description) {
+          const descEl = document.createElement('span');
+          descEl.className = 'q-option-desc';
+          descEl.textContent = String(opt.description);
+          btn.appendChild(descEl);
+        }
+
+        btn.addEventListener('click', () => {
+          if (multi) {
+            btn.classList.toggle('selected');
+          } else {
+            for (const b of buttons) b.classList.remove('selected');
+            btn.classList.add('selected');
+          }
+        });
+        buttons.push(btn);
+        optionsEl.appendChild(btn);
+      }
+      block.appendChild(optionsEl);
+
+      const customWrap = document.createElement('div');
+      customWrap.className = 'q-custom';
+      const custom = document.createElement('input');
+      custom.type = 'text';
+      custom.className = 'q-input';
+      custom.placeholder = '其他（可选，自行输入）';
+      customWrap.appendChild(custom);
+      block.appendChild(customWrap);
+
+      req.__fields.push({
+        question: q.question,
+        type: multi ? 'multi' : 'single',
+        buttons,
+        input: custom,
+      });
+    }
+
+    body.appendChild(block);
+  });
+
+  if (!questions.length) {
+    const empty = document.createElement('div');
+    empty.className = 'q-text';
+    empty.textContent = '（没有可显示的问题）';
+    body.appendChild(empty);
+  }
+}
+
+/** 收集每道题的选择；未作答的题不写入 answers */
+function collectAnswers(req) {
+  const answers = {};
+  for (const field of req.__fields || []) {
+    if (!field.question) continue;
+    if (field.type === 'text') {
+      const v = field.input.value.trim();
+      if (v) answers[field.question] = v;
+      continue;
+    }
+    const labels = field.buttons
+      .filter((b) => b.classList.contains('selected'))
+      .map((b) => b.dataset.label)
+      .filter(Boolean);
+    const custom = field.input.value.trim();
+    let value = '';
+    if (custom) {
+      value = labels.length && field.type === 'multi' ? `${labels.join(', ')}, ${custom}` : custom;
+    } else if (labels.length) {
+      value = labels.join(', ');
+    }
+    if (value) answers[field.question] = value;
+  }
+  return answers;
+}
+
+function respondQuestion(skip) {
+  const req = currentQuestion;
+  if (!req) return;
+  const answers = skip ? {} : collectAnswers(req);
+  hideQuestion();
+
+  window.api.answerQuestion({
+    requestId: req.requestId,
+    toolUseId: req.toolUseId,
+    input: req.input,
+    answers,
+  });
+
+  const entries = Object.entries(answers);
+  if (entries.length) {
+    addSystem(`已回答：${entries.map(([q, a]) => `${q} → ${a}`).join('；')}`);
+  }
+
+  showNextQuestion();
+}
+
 // ---------------------------------------------------------------- 事件
 
 window.api.onEvent((ev) => {
@@ -1085,9 +1275,11 @@ window.api.onEvent((ev) => {
       if (ev.state === 'idle') {
         setRunning(false);
         hideWorking();
-        // 进程退出时不要留下无法回答的权限弹窗
+        // 进程退出时不要留下无法回答的权限/提问弹窗
         permQueue = [];
         hidePermission();
+        questionQueue = [];
+        hideQuestion();
       }
       break;
 
@@ -1111,6 +1303,19 @@ window.api.onEvent((ev) => {
 
     case 'permission':
       enqueuePermission(ev);
+      break;
+
+    case 'question':
+      enqueueQuestion(ev);
+      if (E2E) {
+        console.log('[e2e] question', JSON.stringify(ev.questions).slice(0, 300));
+        setTimeout(() => {
+          const first = document.querySelector('#q-body .q-option');
+          if (first) first.click();
+          $('q-submit').click();
+          console.log('[e2e] question answered, label=', JSON.stringify($('q-title').textContent));
+        }, 500);
+      }
       break;
 
     case 'result':
@@ -1165,6 +1370,8 @@ window.api.onEvent((ev) => {
       hideWorking();
       permQueue = [];
       hidePermission();
+      questionQueue = [];
+      hideQuestion();
       break;
 
     case 'stderr':
@@ -1350,9 +1557,11 @@ inputEl.addEventListener('input', () => {
 $('send').addEventListener('click', send);
 $('stop').addEventListener('click', () => {
   window.api.stop();
-  // 清掉未处理的权限请求，避免写入已终止的会话或残留弹窗
+  // 清掉未处理的权限/提问请求，避免写入已终止的会话或残留弹窗
   permQueue = [];
   hidePermission();
+  questionQueue = [];
+  hideQuestion();
   resetStream();
   setRunning(false);
   setStatus('idle');
@@ -1440,6 +1649,24 @@ inputEl.addEventListener('paste', async (e) => {
 $('perm-allow').addEventListener('click', () => respondPermission(true, false));
 $('perm-deny').addEventListener('click', () => respondPermission(false, false));
 $('perm-always').addEventListener('click', () => respondPermission(true, true));
+
+$('q-submit').addEventListener('click', () => respondQuestion(false));
+$('q-skip').addEventListener('click', () => respondQuestion(true));
+
+// 提问弹窗内 Enter 提交（输入框里也适用）；Esc 跳过当前提问
+$('question-overlay').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    respondQuestion(true);
+    return;
+  }
+  // 只在文本输入框里用 Enter 提交；选项按钮上的 Enter 保留默认的“选中”行为
+  if (e.key === 'Enter' && !e.shiftKey && e.target && e.target.classList.contains('q-input')) {
+    e.preventDefault();
+    respondQuestion(false);
+  }
+});
 
 // ---------------------------------------------------------------- 启动
 

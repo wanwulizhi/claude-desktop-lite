@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   start: (opts) => ipcRenderer.invoke('chat:start', opts),
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
   permission: (payload) => ipcRenderer.send('chat:permission', payload),
+  answerQuestion: (payload) => ipcRenderer.send('chat:answerQuestion', payload),
   stop: () => ipcRenderer.send('chat:stop'),
   onEvent: (cb) => {
     ipcRenderer.on('chat:event', (_e, ev) => cb(ev));

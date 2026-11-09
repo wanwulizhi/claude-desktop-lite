@@ -830,6 +830,19 @@ function handleControlRequest(ev, child) {
   const req = ev.request || {};
   if (req.subtype !== 'can_use_tool') return;
 
+  // AskUserQuestion 不是权限审批，而是模型向用户提问：
+  // 必须把用户选择的答案写回 updatedInput.answers，否则工具会返回“用户未回答”。
+  if (req.tool_name === 'AskUserQuestion') {
+    send('question', {
+      requestId: ev.request_id,
+      toolUseId: req.tool_use_id,
+      input: req.input || {},
+      questions: (req.input && Array.isArray(req.input.questions)) ? req.input.questions : [],
+    });
+    send('status', { state: 'waiting-permission' });
+    return;
+  }
+
   send('permission', {
     requestId: ev.request_id,
     toolName: req.tool_name || 'Unknown',
@@ -839,6 +852,50 @@ function handleControlRequest(ev, child) {
     toolUseId: req.tool_use_id,
   });
   send('status', { state: 'waiting-permission' });
+}
+
+/** 回答 AskUserQuestion：把选项写进 updatedInput.answers（问题文本 -> 答案） */
+function sendQuestionAnswer({ requestId, toolUseId, input, answers, annotations }) {
+  if (!runtime?.child?.stdin || runtime.child.stdin.destroyed) return false;
+  if (typeof requestId !== 'string' || !requestId) return false;
+
+  const cleanAnswers = {};
+  if (answers && typeof answers === 'object') {
+    for (const [k, v] of Object.entries(answers)) {
+      if (typeof k === 'string' && typeof v === 'string' && v) cleanAnswers[k] = v;
+    }
+  }
+  const cleanAnnotations = {};
+  if (annotations && typeof annotations === 'object') {
+    for (const [k, v] of Object.entries(annotations)) {
+      if (typeof k !== 'string' || !v || typeof v !== 'object') continue;
+      const note = {};
+      if (typeof v.preview === 'string' && v.preview) note.preview = v.preview;
+      if (typeof v.notes === 'string' && v.notes) note.notes = v.notes;
+      if (Object.keys(note).length) cleanAnnotations[k] = note;
+    }
+  }
+
+  const response = {
+    type: 'control_response',
+    response: {
+      subtype: 'success',
+      request_id: requestId,
+      response: {
+        behavior: 'allow',
+        // 必须保留原 questions（工具输入 schema 要求），再合并 answers
+        updatedInput: {
+          ...(input && typeof input === 'object' ? input : {}),
+          answers: cleanAnswers,
+          ...(Object.keys(cleanAnnotations).length ? { annotations: cleanAnnotations } : {}),
+        },
+        toolUseID: toolUseId,
+      },
+    },
+  };
+  if (!writeStdin(response)) return false;
+  send('status', { state: 'running' });
+  return true;
 }
 
 function sendPermissionResponse({ requestId, approved, always, toolUseId, suggestions, input }) {
@@ -1067,6 +1124,7 @@ ipcMain.handle('files:toDataUrl', async (_e, file) => {
 ipcMain.handle('chat:start', (_e, opts) => startRuntime(opts || {}));
 ipcMain.handle('chat:send', (_e, payload) => sendUserMessage(payload));
 ipcMain.on('chat:permission', (_e, payload) => sendPermissionResponse(payload));
+ipcMain.on('chat:answerQuestion', (_e, payload) => sendQuestionAnswer(payload || {}));
 ipcMain.on('chat:stop', () => stopRuntime());
 
 ipcMain.on('shell:openExternal', (_e, url) => openExternalSafe(url));
