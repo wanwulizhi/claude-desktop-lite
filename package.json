@@ -4,6 +4,7 @@
   "private": true,
   "description": "A Claude Desktop-like GUI on top of the Claude Code CLI",
   "author": "local",
+  "license": "Apache-2.0",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

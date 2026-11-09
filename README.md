@@ -1,5 +1,7 @@
 # Claude Desktop Lite
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 > 给 Claude Code CLI 套一个轻量、可定制的桌面图形界面——不重写 agent，只把 CLI 的能力可视化。
 
 Claude Desktop Lite 是一个基于 **Electron** 的 Claude Code 桌面客户端。它直接复用官方 CLI 的
@@ -229,3 +231,10 @@ Claude Code 的 `/model`、`/clear`、`/help`、`/compact` 等内建命令由**�
 3. **数学公式**：暂未接入 KaTeX。
 4. **安全**：本应用不做任何自动放行；「始终允许」只回传 CLI 自己给出的
    `permission_suggestions`，由 CLI 持久化。
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 发布。
+
+你可以自由使用、修改和分发本项目（包括商业用途），但需要保留版权与许可声明；
+修改过的文件需注明变更。详见 [LICENSE](LICENSE)。
