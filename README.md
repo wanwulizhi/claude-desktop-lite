@@ -1,11 +1,49 @@
 # Claude Desktop Lite
 
-用 Electron 给 **Claude Code CLI** 套一个接近 Claude Desktop 观感的图形界面。
-界面参照 [dsh-claude-style](https://github.com/Nwflower/dsh-claude-style) 的 Claude 档设计，亮/暗主题跟随系统。
+> 给 Claude Code CLI 套一个轻量、可定制的桌面图形界面——不重写 agent，只把 CLI 的能力可视化。
 
-核心不是重写 agent，而是复用 CLI 自带的 **双向 stream-json 协议** 和
-**`--permission-prompt-tool stdio` 权限协议**——官方 VS Code 扩展和
-Claude Code Chat 用的也是同一套底座。
+Claude Desktop Lite 是一个基于 **Electron** 的 Claude Code 桌面客户端。它直接复用官方 CLI 的
+**双向 stream-json 协议**与 **`--permission-prompt-tool stdio` 权限协议**，因此行为与终端里的
+Claude Code 保持一致：同一份会话、同一套权限、同一套斜杠命令和自定义命令。区别只是把终端里的
+纯文本交互换成了图形化的流式对话、权限卡片、选项弹窗和侧栏会话管理。
+
+界面参照 [dsh-claude-style](https://github.com/Nwflower/dsh-claude-style) 的 Claude 档设计，
+亮/暗主题跟随系统。
+
+<p align="center">
+  <img src="shot-light.png" alt="亮色主题" width="49%" />
+  <img src="shot-dark.png" alt="暗色主题" width="49%" />
+</p>
+
+## 为什么用它
+
+- **长回复更好读**：逐字流式输出，GitHub 风格 Markdown、表格、任务列表、代码高亮与一键复制。
+- **权限不再靠盲打 y/n**：每次工具调用弹出权限卡片，可「允许 / 拒绝 / 始终允许」。
+- **模型提问可以直接点选**：`AskUserQuestion` 渲染成单选、多选或自由输入弹窗，答案自动回传。
+- **会话、项目、模型都在侧栏和顶栏**：直接读取 `~/.claude/projects/**/*.jsonl`，随时回看历史。
+- **切换即时生效**：标准 / 接受编辑 / 计划 / YOLO 权限模式与模型均可在会话内切换。
+- **关闭即清理**：Windows 下关闭窗口会结束整个 CLI 进程树，不留后台任务。
+
+## 环境要求
+
+- Windows 10 / 11（当前打包目标为 `win-x64`）
+- Node.js 18+（仅从源码运行时需要）
+- 已安装并登录 [Claude Code CLI](https://code.claude.com/docs/en/overview)，`claude` 在 `PATH` 中
+- 如果使用第三方中转，沿用 `~/.claude/settings.json` 里的 `ANTHROPIC_BASE_URL` / 模型配置即可
+
+## 快速开始
+
+```bash
+git clone https://github.com/wanwulizhi/claude-desktop-lite.git
+cd claude-desktop-lite
+npm install
+npm start
+```
+
+也可以直接使用 `dist/Claude Desktop Lite Setup 0.4.2.exe`（未签名，SmartScreen 提示时选择
+「更多信息 → 仍要运行」）。
+
+## 已实现
 
 ## 已实现
 
@@ -36,21 +74,16 @@ Claude Code Chat 用的也是同一套底座。
 - **剪贴板图片**：没有磁盘路径的剪贴板/浏览器图片走 data URL，可直接粘贴发送
 - **权限与路径校验**：session id、权限模式、图片扩展名均做白名单校验
 
-## 运行
+### 国内网络
 
-```bash
-npm install
-npm start
-```
-
-国内网络安装 Electron 失败时：
+安装 Electron 或打包工具时如果下载失败，使用镜像：
 
 ```bash
 ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" npm install
 ```
 
-前置条件：`claude` 在 PATH 中（本机已满足）。CLI 会继承 `~/.claude/settings.json`
-里的中转配置（`ANTHROPIC_BASE_URL` / 模型别名），不需要额外设置。
+CLI 会继承 `~/.claude/settings.json` 里的中转配置（`ANTHROPIC_BASE_URL` / 模型别名），
+GUI 不需要额外设置。
 
 ## 已验证
 
@@ -144,7 +177,8 @@ main.js              主进程：会话扫描、CLI 生命周期、权限回写
 preload.js           contextBridge 暴露的 API
 renderer/            界面（原生 JS，无框架）
 scripts/probe.js     无 GUI 协议探针
-screenshot.png       当前界面截图
+shot-light.png       亮色主题截图
+shot-dark.png        暗色主题截图
 ```
 
 ## 性能（实测）
