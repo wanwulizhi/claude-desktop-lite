@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Claude Desktop Lite</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="vendor/prism.js" defer></script>
+  <script src="vendor/prism-json.min.js" defer></script>
+  <script src="vendor/prism-bash.min.js" defer></script>
+  <script src="vendor/prism-python.min.js" defer></script>
+  <script src="vendor/prism-markdown.min.js" defer></script>
+  <script src="vendor/prism-yaml.min.js" defer></script>
+  <script src="vendor/prism-sql.min.js" defer></script>
+  <script src="vendor/prism-powershell.min.js" defer></script>
+  <script src="vendor/prism-jsx.min.js" defer></script>
+  <script src="vendor/prism-typescript.min.js" defer></script>
+  <script src="vendor/prism-tsx.min.js" defer></script>
+  <script src="vendor/marked.umd.js" defer></script>
+  <script src="vendor/purify.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">✳</span>
+        <span class="brand-name">Claude Desktop Lite</span>
+      </div>
+
+      <div class="side-head">
+        <button id="new-chat" class="new-chat"><span class="plus">＋</span>新会话</button>
+      </div>
+
+      <div class="side-label">工作区</div>
+      <div id="sessions" class="sessions"></div>
+
+      <div class="side-foot">
+        <span class="avatar">✳</span>
+        <div class="user-meta">
+          <div class="user-name">本地用户</div>
+          <div id="cwd-label" class="user-sub">未选择项目</div>
+        </div>
+      </div>
+    </aside>
+
+    <main id="main">
+      <header id="topbar">
+        <div class="top-left">
+          <span id="title">新会话</span>
+          <span id="status" class="status idle">就绪</span>
+        </div>
+        <div class="top-right">
+          <button id="theme-btn" class="icon-btn" title="主题">◐</button>
+          <div id="theme-menu" class="model-menu theme-menu" hidden></div>
+          <button id="model-label" class="model-label" title="切换模型">默认模型</button>
+          <div id="model-menu" class="model-menu" hidden></div>
+        </div>
+      </header>
+
+      <div id="messages" class="messages">
+        <div class="empty" id="empty">
+          <div class="empty-mark">✳</div>
+          <h2>今天想让我做什么？</h2>
+          <p>左侧选择历史会话，或直接输入消息开始。</p>
+          <p class="hint">输入 / 查看可用命令 · 工具执行前会请求权限</p>
+        </div>
+      </div>
+
+      <footer id="composer">
+        <div id="working" class="working" hidden>
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span id="working-text">正在连接 Claude…</span>
+        </div>
+        <div class="composer-wrap">
+          <button id="scroll-bottom" class="scroll-bottom" hidden>↓ 回到底部</button>
+          <div id="attachments" class="attachments" hidden></div>
+          <div id="slash-menu" class="slash-menu" hidden></div>
+          <div id="mode-menu" class="slash-menu mode-menu" hidden></div>
+          <div class="composer-box">
+            <button id="mode-btn" class="mode-btn" title="权限模式">标准</button>
+            <button id="attach" class="btn-icon" title="添加图片">＋</button>
+            <textarea id="input" rows="1" placeholder="给 Claude 发消息…" ></textarea>
+            <button id="send" class="send-btn" title="发送">↑</button>
+            <button id="stop" class="btn-ghost stop-btn" hidden>停止</button>
+          </div>
+        </div>
+        <div class="composer-hint">
+          <span>Enter 发送 · Shift+Enter 换行 · 可拖入图片或文件</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <div id="perm-overlay" class="overlay" hidden>
+    <div class="perm-card">
+      <div class="perm-title">
+        Claude 想执行 <span id="perm-tool" class="tool-name"></span>
+      </div>
+      <div class="perm-reason" id="perm-reason"></div>
+      <pre id="perm-input" class="perm-input"></pre>
+      <div class="perm-actions">
+        <button id="perm-deny" class="btn-ghost">拒绝</button>
+        <button id="perm-always" class="btn-ghost" hidden>始终允许</button>
+        <button id="perm-allow" class="btn-primary">允许</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

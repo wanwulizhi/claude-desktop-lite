@@ -1,0 +1,54 @@
+{
+  "name": "claude-desktop-lite",
+  "version": "0.4.0",
+  "private": true,
+  "description": "A Claude Desktop-like GUI on top of the Claude Code CLI",
+  "author": "local",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "probe": "node scripts/probe.js",
+    "pack": "electron-builder --win --x64 --dir",
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "dompurify": "^3.4.17",
+    "electron": "^33.0.0",
+    "electron-builder": "^26.18.0",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.1.3",
+    "prismjs": "^1.30.0"
+  },
+  "build": {
+    "appId": "com.claudedesktoplite.app",
+    "productName": "Claude Desktop Lite",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Claude Desktop Lite"
+    }
+  }
+}

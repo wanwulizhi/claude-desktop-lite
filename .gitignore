@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+*.exe
+
+# 本地 Claude Code 设置（可能包含个人路径/权限）
+.claude/settings.local.json
+.claude/*.local.json
+
+# 系统与编辑器杂项
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.local
