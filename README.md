@@ -42,10 +42,8 @@ npm install
 npm start
 ```
 
-也可以直接下载 [Release v0.4.2](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
-中的 `Claude Desktop Lite Setup 0.4.2.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
-
-## 已实现
+也可以直接下载 [Release v0.4.3](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
+中的 `Claude Desktop Lite Setup 0.4.3.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
 
 ## 已实现
 
@@ -144,7 +142,7 @@ claude --resume <session-id>
 
 ```bash
 npm run pack   # 解包版：dist/win-unpacked/Claude Desktop Lite.exe
-npm run dist   # NSIS 安装包：dist/Claude Desktop Lite Setup 0.4.2.exe
+npm run dist   # NSIS 安装包：dist/Claude Desktop Lite Setup 0.4.3.exe
 ```
 
 国内网络需要镜像：
