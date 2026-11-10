@@ -1,6 +1,6 @@
 {
   "name": "claude-desktop-lite",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "A Claude Desktop-like GUI on top of the Claude Code CLI",
   "author": "local",
@@ -23,6 +23,7 @@
   "build": {
     "appId": "com.claudedesktoplite.app",
     "productName": "Claude Desktop Lite",
+    "artifactName": "Claude.Desktop.Lite.Setup.${version}.${ext}",
     "compression": "maximum",
     "electronLanguages": [
       "zh-CN",
