@@ -21,22 +21,88 @@
   <script src="app.js" defer></script>
 </head>
 <body>
+  <!-- 内联图标库：24px 网格、1.7 描边，统一视觉语言 -->
+  <svg class="svg-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-spark" viewBox="0 0 24 24">
+      <path d="M12 2.6v18.8M2.6 12h18.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M5.35 5.35l13.3 13.3M18.65 5.35 5.35 18.65" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".55"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24">
+      <path d="m6.5 9.5 5.5 5.5 5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-contrast" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24">
+      <path d="M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l7.8-7.8a3.4 3.4 0 0 1 4.8 4.8l-7.8 7.8a1.8 1.8 0 0 1-2.6-2.6l7.1-7.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24">
+      <path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24">
+      <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="m5.5 12.5 4 4L18.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24">
+      <path d="M12 3 5.5 5.8v5.4c0 4.3 2.7 7.6 6.5 9.3 3.8-1.7 6.5-5 6.5-9.3V5.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+      <path d="m9.2 11.8 2 2 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-help" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="M9.6 9.3a2.5 2.5 0 1 1 3.8 2.2c-.8.5-1.4 1.1-1.4 2.1v.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <circle cx="12" cy="17" r="1" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="m15.5 8.5-2 5-5 2 2-5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-git" viewBox="0 0 24 24">
+      <path d="M6 3v12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <circle cx="18" cy="6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <circle cx="6" cy="18" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="M18 8.6a7.4 7.4 0 0 1-7.4 7.4H8.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 24 24">
+      <path d="M9 6.5h11M9 12h11M9 17.5h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <circle cx="4.2" cy="6.5" r="1.1" fill="currentColor"/>
+      <circle cx="4.2" cy="12" r="1.1" fill="currentColor"/>
+      <circle cx="4.2" cy="17.5" r="1.1" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="m10 8.7 5 3.3-5 3.3z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24">
+      <path d="M3.5 7.5a2 2 0 0 1 2-2h4l1.8 1.8H18.5a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
+  </svg>
+
   <div id="app">
     <aside id="sidebar">
       <div class="brand">
-        <span class="brand-mark">✳</span>
-        <span class="brand-name">Claude Desktop Lite</span>
+        <span class="brand-mark"><svg class="icon"><use href="#i-spark"></use></svg></span>
+        <span class="brand-name">Claude Desktop</span>
+        <span class="brand-badge">Lite</span>
       </div>
 
       <div class="side-head">
-        <button id="new-chat" class="new-chat"><span class="plus">＋</span>新会话</button>
+        <button id="new-chat" class="new-chat" type="button">
+          <svg class="icon"><use href="#i-plus"></use></svg>
+          <span>新会话</span>
+        </button>
       </div>
 
       <div class="side-label">工作区</div>
       <div id="sessions" class="sessions"></div>
 
       <div class="side-foot">
-        <span class="avatar">✳</span>
+        <span class="avatar"><svg class="icon"><use href="#i-spark"></use></svg></span>
         <div class="user-meta">
           <div class="user-name">本地用户</div>
           <div id="cwd-label" class="user-sub">未选择项目</div>
@@ -51,21 +117,18 @@
           <span id="status" class="status idle">就绪</span>
         </div>
         <div class="top-right">
-          <button id="theme-btn" class="icon-btn" title="主题">◐</button>
-          <div id="theme-menu" class="model-menu theme-menu" hidden></div>
-          <button id="model-label" class="model-label" title="切换模型">默认模型</button>
+          <button id="theme-btn" class="icon-btn" type="button" title="切换主题" aria-label="切换主题">
+            <svg class="icon"><use href="#i-contrast"></use></svg>
+          </button>
+          <button id="model-label" class="model-label" type="button" title="切换模型">
+            <span id="model-label-text">默认模型</span>
+          </button>
           <div id="model-menu" class="model-menu" hidden></div>
+          <div id="theme-menu" class="model-menu theme-menu" hidden></div>
         </div>
       </header>
 
-      <div id="messages" class="messages">
-        <div class="empty" id="empty">
-          <div class="empty-mark">✳</div>
-          <h2>今天想让我做什么？</h2>
-          <p>左侧选择历史会话，或直接输入消息开始。</p>
-          <p class="hint">输入 / 查看可用命令 · 工具执行前会请求权限</p>
-        </div>
-      </div>
+      <div id="messages" class="messages"></div>
 
       <footer id="composer">
         <div id="working" class="working" hidden>
@@ -73,47 +136,106 @@
           <span id="working-text">正在连接 Claude…</span>
         </div>
         <div class="composer-wrap">
-          <button id="scroll-bottom" class="scroll-bottom" hidden>↓ 回到底部</button>
+          <button id="scroll-bottom" class="scroll-bottom" type="button" hidden>
+            <svg class="icon"><use href="#i-chevron-down"></use></svg>
+            <span>回到底部</span>
+          </button>
           <div id="attachments" class="attachments" hidden></div>
           <div id="slash-menu" class="slash-menu" hidden></div>
           <div id="mode-menu" class="slash-menu mode-menu" hidden></div>
           <div class="composer-box">
-            <button id="mode-btn" class="mode-btn" title="权限模式">标准</button>
-            <button id="attach" class="btn-icon" title="添加图片">＋</button>
-            <textarea id="input" rows="1" placeholder="给 Claude 发消息…" ></textarea>
-            <button id="send" class="send-btn" title="发送">↑</button>
-            <button id="stop" class="btn-ghost stop-btn" hidden>停止</button>
+            <button id="mode-btn" class="mode-btn" type="button" title="切换权限模式">标准</button>
+            <button id="attach" class="btn-icon" type="button" title="添加图片" aria-label="添加图片">
+              <svg class="icon"><use href="#i-paperclip"></use></svg>
+            </button>
+            <textarea id="input" rows="1" placeholder="给 Claude 发消息…"></textarea>
+            <button id="send" class="send-btn" type="button" title="发送" aria-label="发送">
+              <svg class="icon"><use href="#i-arrow-up"></use></svg>
+            </button>
+            <button id="stop" class="btn-ghost stop-btn" type="button" hidden>
+              <svg class="icon"><use href="#i-stop"></use></svg>
+              <span>停止</span>
+            </button>
           </div>
         </div>
         <div class="composer-hint">
-          <span>Enter 发送 · Shift+Enter 换行 · 可拖入图片或文件</span>
+          <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 可拖入图片或文件</span>
         </div>
       </footer>
     </main>
   </div>
 
+  <!-- 空状态模板：showEmpty() 克隆后插入 -->
+  <template id="empty-template">
+    <div class="empty" id="empty">
+      <div class="empty-mark"><svg class="icon"><use href="#i-spark"></use></svg></div>
+      <h2>今天想让我做什么？</h2>
+      <p class="empty-sub">选择左侧的历史会话，或者直接开始一段新的对话。</p>
+      <div class="suggestions">
+        <button class="suggest" type="button" data-prompt="请简要说明这个项目的目录结构、技术栈和主要入口。">
+          <span class="suggest-icon"><svg class="icon"><use href="#i-compass"></use></svg></span>
+          <span class="suggest-body">
+            <span class="suggest-title">了解项目</span>
+            <span class="suggest-desc">目录结构、技术栈与入口</span>
+          </span>
+        </button>
+        <button class="suggest" type="button" data-prompt="请审查当前工作区未提交的改动，指出潜在问题和改进点。">
+          <span class="suggest-icon"><svg class="icon"><use href="#i-git"></use></svg></span>
+          <span class="suggest-body">
+            <span class="suggest-title">审查改动</span>
+            <span class="suggest-desc">检查未提交的 diff</span>
+          </span>
+        </button>
+        <button class="suggest" type="button" data-prompt="请用要点总结我们到目前为止的对话。">
+          <span class="suggest-icon"><svg class="icon"><use href="#i-list"></use></svg></span>
+          <span class="suggest-body">
+            <span class="suggest-title">总结对话</span>
+            <span class="suggest-desc">提炼要点与待办</span>
+          </span>
+        </button>
+        <button class="suggest" type="button" data-prompt="运行这个项目的测试，并分析失败的用例。">
+          <span class="suggest-icon"><svg class="icon"><use href="#i-play"></use></svg></span>
+          <span class="suggest-body">
+            <span class="suggest-title">运行测试</span>
+            <span class="suggest-desc">执行并分析失败用例</span>
+          </span>
+        </button>
+      </div>
+      <p class="hint">输入 <kbd>/</kbd> 查看可用命令 · 工具执行前会请求权限</p>
+    </div>
+  </template>
+
   <div id="question-overlay" class="overlay" hidden>
     <div class="perm-card question-card">
-      <div class="perm-title" id="q-title">Claude 想问你</div>
+      <div class="perm-head">
+        <span class="perm-icon question"><svg class="icon"><use href="#i-help"></use></svg></span>
+        <div class="perm-heading">
+          <div class="perm-kicker">需要确认</div>
+          <div class="perm-title" id="q-title">Claude 想问你</div>
+        </div>
+      </div>
       <div id="q-body" class="question-body"></div>
       <div class="perm-actions">
-        <button id="q-skip" class="btn-ghost">跳过</button>
-        <button id="q-submit" class="btn-primary">提交</button>
+        <button id="q-skip" class="btn-ghost" type="button">跳过</button>
+        <button id="q-submit" class="btn-primary" type="button">提交</button>
       </div>
     </div>
   </div>
 
   <div id="perm-overlay" class="overlay" hidden>
     <div class="perm-card">
-      <div class="perm-title">
-        Claude 想执行 <span id="perm-tool" class="tool-name"></span>
+      <div class="perm-head">
+        <span class="perm-icon"><svg class="icon"><use href="#i-shield"></use></svg></span>
+        <div class="perm-heading">
+          <div class="perm-title">Claude 想执行 <span id="perm-tool" class="tool-name"></span></div>
+          <div id="perm-reason" class="perm-reason"></div>
+        </div>
       </div>
-      <div class="perm-reason" id="perm-reason"></div>
       <pre id="perm-input" class="perm-input"></pre>
       <div class="perm-actions">
-        <button id="perm-deny" class="btn-ghost">拒绝</button>
-        <button id="perm-always" class="btn-ghost" hidden>始终允许</button>
-        <button id="perm-allow" class="btn-primary">允许</button>
+        <button id="perm-deny" class="btn-ghost" type="button">拒绝</button>
+        <button id="perm-always" class="btn-ghost" type="button" hidden>始终允许</button>
+        <button id="perm-allow" class="btn-primary" type="button">允许</button>
       </div>
     </div>
   </div>

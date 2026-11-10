@@ -166,13 +166,22 @@ function clearMessages() {
 }
 
 function showEmpty() {
-  messagesEl.innerHTML = `
-    <div class="empty" id="empty">
-      <div class="empty-mark">✳</div>
-      <h2>今天想让我做什么？</h2>
-      <p>左侧选择历史会话，或直接输入消息开始。</p>
-      <p class="hint">输入 / 查看可用命令 · 工具执行前会请求权限</p>
-    </div>`;
+  const tpl = $('empty-template');
+  messagesEl.innerHTML = '';
+  if (tpl) messagesEl.appendChild(tpl.content.cloneNode(true));
+  bindEmptySuggestions();
+}
+
+/** 空状态里的快捷提示：填入输入框，不直接发送 */
+function bindEmptySuggestions() {
+  messagesEl.querySelectorAll('.suggest').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      inputEl.value = btn.dataset.prompt || '';
+      inputEl.focus();
+      autoResize();
+      updateSlashMenu();
+    });
+  });
 }
 
 function removeEmpty() {
@@ -197,8 +206,8 @@ function addSystem(text, isError = false) {
   readGroup = null;
   removeEmpty();
   const div = document.createElement('div');
-  div.className = 'msg assistant';
-  div.innerHTML = `<div class="bubble" style="color:${isError ? 'var(--err)' : 'var(--muted)'};font-size:12px">${escapeHtml(text)}</div>`;
+  div.className = `msg system${isError ? ' error' : ''}`;
+  div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
   messagesEl.appendChild(div);
   scrollBottom();
 }
@@ -236,6 +245,7 @@ const STATUS_ICONS = {
   err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
 };
 const CHEVRON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+const CHECK_ICON = '<svg class="mi-check" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"></use></svg>';
 const SPINNER = '<span class="tool-spinner"></span>';
 
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell', 'Shell']);
@@ -1016,7 +1026,9 @@ function modelLabel(id) {
 }
 
 function updateModelLabel() {
-  $('model-label').textContent = modelLabel(state.model);
+  const text = $('model-label-text');
+  if (text) text.textContent = modelLabel(state.model);
+  else $('model-label').textContent = modelLabel(state.model);
 }
 
 async function initModels() {
@@ -1045,7 +1057,8 @@ function renderModelMenu() {
     el.className = `model-item${active ? ' active' : ''}`;
     el.innerHTML =
       `<span class="mi-label">${escapeHtml(m.label)}</span>` +
-      `<span class="mi-slot">${escapeHtml(m.slot)}</span>`;
+      `<span class="mi-slot">${escapeHtml(m.slot)}</span>` +
+      (active ? CHECK_ICON : '');
     el.addEventListener('click', () => selectModel(m.id));
     menu.appendChild(el);
   }
@@ -1097,10 +1110,12 @@ function renderModeMenu() {
 
   for (const mode of PERMISSION_MODES) {
     const el = document.createElement('div');
-    el.className = `slash-item${mode.id === state.permissionMode ? ' active' : ''}`;
+    const active = mode.id === state.permissionMode;
+    el.className = `slash-item${active ? ' active' : ''}`;
     el.innerHTML =
       `<span class="sl-name">${escapeHtml(mode.label)}</span>` +
-      `<span class="sl-desc">${escapeHtml(mode.desc)}</span>`;
+      `<span class="sl-desc">${escapeHtml(mode.desc)}</span>` +
+      (active ? CHECK_ICON : '');
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
       selectPermissionMode(mode.id);
@@ -1157,8 +1172,10 @@ function renderThemeMenu() {
 
   for (const theme of THEME_MODES) {
     const el = document.createElement('div');
-    el.className = `model-item${theme.id === state.theme ? ' active' : ''}`;
-    el.innerHTML = `<span class="mi-label">${escapeHtml(theme.label)}</span>`;
+    const active = theme.id === state.theme;
+    el.className = `model-item${active ? ' active' : ''}`;
+    el.innerHTML = `<span class="mi-label">${escapeHtml(theme.label)}</span>` +
+      (active ? CHECK_ICON : '');
     el.addEventListener('click', () => selectTheme(theme.id));
     menu.appendChild(el);
   }
@@ -1304,7 +1321,9 @@ async function loadSessions() {
   for (const [cwd, list] of sorted) {
     const label = document.createElement('div');
     label.className = 'group-label';
-    label.textContent = baseName(cwd);
+    label.innerHTML =
+      `<span class="group-name">${escapeHtml(baseName(cwd))}</span>` +
+      `<span class="group-count">${list.length}</span>`;
     label.title = cwd;
     container.appendChild(label);
 
@@ -1320,7 +1339,7 @@ async function loadSessions() {
   }
 
   if (!sessions.length) {
-    container.innerHTML = '<div class="group-label">还没有历史会话</div>';
+    container.innerHTML = '<div class="side-empty">还没有历史会话</div>';
   }
 }
 
@@ -2105,6 +2124,7 @@ $('question-overlay').addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- 启动
 
 setStatus('idle');
+showEmpty();
 updateCwd();
 updateModeLabel();
 updateScrollButton();

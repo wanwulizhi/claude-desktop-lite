@@ -88,7 +88,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#262624' : '#faf9f5',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1a17' : '#fbfaf7',
     autoHideMenuBar: true,
     title: 'Claude Desktop Lite',
     webPreferences: {
