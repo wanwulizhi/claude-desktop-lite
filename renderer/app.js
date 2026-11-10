@@ -47,7 +47,14 @@ let currentPerm = null;
 let questionQueue = [];
 let currentQuestion = null;
 const toolCards = new Map();
+const orphanToolResults = new Map();
 let readGroup = null;
+
+// 历史分页：当前页游标 + 渲染目标（加载更早时写入 fragment，避免触发滚动）
+const HISTORY_PAGE_SIZE = 300;
+let historyState = null; // { sessionId, before, hasMore, loading }
+let renderTarget = messagesEl;
+let renderAutoScroll = true;
 
 // 流式渲染状态
 let streamState = null; // { id, text, el, raf }
@@ -159,10 +166,20 @@ function scrollBottom() {
   updateScrollButton();
 }
 
+/** 统一的消息追加入口：历史分页时写入 fragment 且不滚动 */
+function appendNode(node) {
+  renderTarget.appendChild(node);
+  if (renderAutoScroll) scrollBottom();
+}
+
 function clearMessages() {
   messagesEl.innerHTML = '';
   toolCards.clear();
+  orphanToolResults.clear();
+  historyState = null;
   readGroup = null;
+  renderTarget = messagesEl;
+  renderAutoScroll = true;
 }
 
 function showEmpty() {
@@ -189,6 +206,27 @@ function removeEmpty() {
   if (empty) empty.remove();
 }
 
+/** 把历史块渲染到指定容器；fragment 模式下不滚动 */
+function renderHistoryItems(items, target, { autoScroll = false } = {}) {
+  const prevTarget = renderTarget;
+  const prevAuto = renderAutoScroll;
+  renderTarget = target;
+  renderAutoScroll = autoScroll;
+  readGroup = null;
+  try {
+    for (const it of items) {
+      if (it.kind === 'user') addMessage('user', it.text);
+      else if (it.kind === 'assistant') addMessage('assistant', it.text);
+      else if (it.kind === 'tool_use') addToolUse(it);
+      else if (it.kind === 'tool_result') addToolResult(it);
+    }
+  } finally {
+    readGroup = null;
+    renderTarget = prevTarget;
+    renderAutoScroll = prevAuto;
+  }
+}
+
 function addMessage(kind, text) {
   readGroup = null;
   removeEmpty();
@@ -197,8 +235,7 @@ function addMessage(kind, text) {
   div.innerHTML = `<div class="who">${kind === 'user' ? '你' : 'Claude'}</div>
                    <div class="bubble">${renderMarkdown(text)}</div>`;
   enhanceMarkdown(div.querySelector('.bubble'));
-  messagesEl.appendChild(div);
-  scrollBottom();
+  appendNode(div);
   return div;
 }
 
@@ -208,8 +245,7 @@ function addSystem(text, isError = false) {
   const div = document.createElement('div');
   div.className = `msg system${isError ? ' error' : ''}`;
   div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
-  messagesEl.appendChild(div);
-  scrollBottom();
+  appendNode(div);
 }
 
 function addThinking(text) {
@@ -218,8 +254,7 @@ function addThinking(text) {
   const div = document.createElement('div');
   div.className = 'thinking';
   div.innerHTML = `<details><summary>思考过程</summary><pre>${escapeHtml(text)}</pre></details>`;
-  messagesEl.appendChild(div);
-  scrollBottom();
+  appendNode(div);
 }
 
 function summarizeTool(name, input) {
@@ -395,8 +430,7 @@ function createToolCard({ id, name, summary }) {
     }
   });
 
-  messagesEl.appendChild(card);
-  scrollBottom();
+  appendNode(card);
   return view;
 }
 
@@ -1148,13 +1182,23 @@ function createReadEntry({ id, input }) {
   group.card.setStatus('running');
   updateReadSummary(group);
   toolCards.set(id, view);
-  scrollBottom();
+  if (renderAutoScroll) scrollBottom();
   return view;
+}
+
+/** 分页边界可能先看到 tool_result、后看到 tool_use；先存起来，等卡片出现再回填 */
+function applyOrphanResult(id, view) {
+  if (!view || typeof view.setResult !== 'function') return;
+  const result = orphanToolResults.get(id);
+  if (!result) return;
+  view.setResult(result);
+  orphanToolResults.delete(id);
 }
 
 function addToolUse({ id, name, input }) {
   if (name === 'Read') {
-    createReadEntry({ id, input });
+    const view = createReadEntry({ id, input });
+    applyOrphanResult(id, view);
     return;
   }
 
@@ -1174,12 +1218,17 @@ function addToolUse({ id, name, input }) {
   else view = createGenericView({ id, name, input });
 
   toolCards.set(id, view);
+  applyOrphanResult(id, view);
 }
 
 function addToolResult({ toolUseId, isError, text, truncated, totalLength }) {
   const view = toolCards.get(toolUseId);
-  if (!view || typeof view.setResult !== 'function') return;
-  view.setResult({ isError, text, truncated, totalLength });
+  const result = { isError, text, truncated, totalLength };
+  if (!view || typeof view.setResult !== 'function') {
+    orphanToolResults.set(toolUseId, result);
+    return;
+  }
+  view.setResult(result);
 }
 
 function handleStream(ev) {
@@ -1205,7 +1254,7 @@ function handleStream(ev) {
       const div = document.createElement('div');
       div.className = 'msg assistant';
       div.innerHTML = '<div class="who">Claude</div><div class="bubble"></div>';
-      messagesEl.appendChild(div);
+      renderTarget.appendChild(div);
       streamState.el = div;
     }
 
@@ -1384,8 +1433,7 @@ async function addUserMessage(text, images) {
     bubble.appendChild(body);
   }
 
-  messagesEl.appendChild(div);
-  scrollBottom();
+  appendNode(div);
   return div;
 }
 
@@ -1901,26 +1949,102 @@ async function openSession(s) {
   try {
     h = await window.api.history(s.id);
   } catch (err) {
+    if (state.sessionId !== s.id) return;
     console.error('[history] load failed', err);
     addSystem('读取会话历史失败。', true);
     prewarm();
     return;
   }
+  if (state.sessionId !== s.id) return;
   if (!state.cwd && h.cwd) state.cwd = h.cwd;
   updateCwd();
 
   if (!h.items.length) {
     addSystem('这个会话没有可显示的消息。');
   } else {
-    for (const it of h.items) {
-      if (it.kind === 'user') addMessage('user', it.text);
-      else if (it.kind === 'assistant') addMessage('assistant', it.text);
-      else if (it.kind === 'tool_use') addToolUse(it);
-      else if (it.kind === 'tool_result') addToolResult(it);
-    }
+    renderHistoryItems(h.items, messagesEl, { autoScroll: false });
   }
+  addLoadEarlierButton(h);
+  scrollBottom();
 
   prewarm();
+}
+
+function removeLoadEarlier() {
+  const btn = $('load-earlier');
+  if (btn) btn.remove();
+}
+
+/** 首屏历史前面插入「加载更早」按钮；没有更早内容时不显示 */
+function addLoadEarlierButton(page) {
+  removeLoadEarlier();
+  historyState = null;
+  if (!page || !page.hasMore) return;
+
+  historyState = {
+    sessionId: state.sessionId,
+    before: page.nextBefore,
+    hasMore: true,
+    loading: false,
+  };
+
+  const btn = document.createElement('button');
+  btn.id = 'load-earlier';
+  btn.className = 'load-earlier';
+  btn.type = 'button';
+  btn.title = '加载更早的消息';
+  btn.innerHTML =
+    '<svg class="icon" aria-hidden="true"><use href="#i-chevron-down"></use></svg>' +
+    '<span class="load-earlier-text">加载更早的消息</span>';
+  btn.addEventListener('click', loadEarlier);
+  messagesEl.insertBefore(btn, messagesEl.firstChild);
+}
+
+async function loadEarlier() {
+  const hs = historyState;
+  if (!hs || hs.loading || !hs.hasMore) return;
+  if (hs.sessionId !== state.sessionId) return;
+
+  const btn = $('load-earlier');
+  const label = btn && btn.querySelector('.load-earlier-text');
+  const prevBefore = hs.before;
+  hs.loading = true;
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = '正在加载…';
+
+  try {
+    const page = await window.api.history(hs.sessionId, {
+      before: prevBefore,
+      limit: HISTORY_PAGE_SIZE,
+    });
+    if (hs.sessionId !== state.sessionId) return;
+
+    if (page.items && page.items.length) {
+      const fragment = document.createDocumentFragment();
+      renderHistoryItems(page.items, fragment, { autoScroll: false });
+      const marker = $('load-earlier');
+      if (marker && marker.nextSibling) messagesEl.insertBefore(fragment, marker.nextSibling);
+      else messagesEl.appendChild(fragment);
+    }
+
+    const progressed = typeof page.nextBefore === 'number' && page.nextBefore < prevBefore;
+    hs.before = page.nextBefore;
+    hs.hasMore = !!page.hasMore && progressed;
+
+    if (!hs.hasMore) {
+      removeLoadEarlier();
+    } else {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = '加载更早的消息';
+    }
+    messagesEl.scrollTop = 0;
+  } catch (err) {
+    console.error('[history] load earlier failed', err);
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = '加载失败，点击重试';
+  } finally {
+    hs.loading = false;
+  }
 }
 
 async function newChat() {

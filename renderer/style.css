@@ -661,6 +661,34 @@ kbd {
   scrollbar-gutter: stable;
 }
 
+.load-earlier {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  margin: 0 auto 18px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raise);
+  box-shadow: var(--shadow-sm);
+  color: var(--muted);
+  font-size: 11px;
+  transition: color .13s ease, border-color .13s ease, box-shadow .13s ease, transform .13s ease;
+}
+
+.load-earlier:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.load-earlier:active { transform: none; }
+.load-earlier:disabled { opacity: .55; cursor: default; transform: none; }
+.load-earlier .icon { width: 13px; height: 13px; transform: rotate(180deg); }
+
 .msg {
   max-width: 816px;
   margin: 0 auto 20px;

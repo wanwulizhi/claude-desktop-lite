@@ -20,14 +20,16 @@ const readline = require('readline');
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PERMISSION_MODES = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
-const HISTORY_LIMIT = 300;
-const HISTORY_TAIL_BYTES = 2 * 1024 * 1024;
+const HISTORY_PAGE_SIZE = 300;
+const HISTORY_CACHE_MAX = 4;
 const INIT_TIMEOUT_MS = 20000;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const TOOL_RESULT_LIMIT = 50000;
 
 /** 会话列表的标题/cwd 缓存：文件 mtime+size 不变就不重读头部 */
 const sessionMetaCache = new Map();
+/** 已解析的历史块缓存：分页时避免反复解析整个 jsonl */
+const historyCache = new Map();
 
 let win = null;
 /** 当前唯一的会话进程 */
@@ -426,29 +428,7 @@ function listSessions() {
   return out.slice(0, 300);
 }
 
-/** 从文件尾部读取若干字节，返回完整行（丢弃第一行可能被截断的内容） */
-function readTailLines(file, bytes) {
-  const st = fs.statSync(file);
-  const start = Math.max(0, st.size - bytes);
-  const len = st.size - start;
-  if (len <= 0) return [];
-
-  const fd = fs.openSync(file, 'r');
-  try {
-    const buf = Buffer.alloc(len);
-    const n = fs.readSync(fd, buf, 0, len, start);
-    let text = buf.subarray(0, n).toString('utf8');
-    if (start > 0) {
-      const nl = text.indexOf('\n');
-      if (nl >= 0) text = text.slice(nl + 1);
-    }
-    return text.split('\n');
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-/** 把一条 jsonl 记录映射成渲染块；push 负责维持最多 HISTORY_LIMIT 条 */
+/** 把一条 jsonl 记录映射成渲染块；push 由调用方决定是否截断 */
 function appendHistoryRecord(rec, push, onCwd) {
   if (rec.cwd) onCwd(rec.cwd);
   if (rec.isSidechain) return;
@@ -499,9 +479,52 @@ function findCwdInHead(file) {
   return '';
 }
 
-/** 读取会话历史：大文件只读尾部，内存里最多保留 HISTORY_LIMIT 条 */
-async function loadHistory(sessionId) {
-  const empty = { id: sessionId, cwd: '', items: [] };
+/**
+ * 解析整个会话文件并按 mtime+size 缓存。
+ * 分页只在这份数组上切片，避免每次「加载更早」都重新解析 10MB 的 jsonl。
+ */
+async function parseHistoryFile(file) {
+  const st = fs.statSync(file);
+  const cached = historyCache.get(file);
+  if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+    return cached;
+  }
+
+  const items = [];
+  let cwd = '';
+  const push = (item) => items.push(item);
+  const onCwd = (value) => { cwd = value; };
+
+  try {
+    const rl = readline.createInterface({
+      input: fs.createReadStream(file, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let rec;
+      try { rec = JSON.parse(line); } catch { continue; }
+      appendHistoryRecord(rec, push, onCwd);
+    }
+  } catch { /* 返回已经解析的部分 */ }
+
+  if (!cwd) cwd = findCwdInHead(file);
+
+  const entry = { mtimeMs: st.mtimeMs, size: st.size, items, cwd };
+  historyCache.set(file, entry);
+  if (historyCache.size > HISTORY_CACHE_MAX) {
+    historyCache.delete(historyCache.keys().next().value);
+  }
+  return entry;
+}
+
+/**
+ * 分页读取会话历史。
+ *  - 不传 before：返回最后一页
+ *  - 传 before：返回 nextBefore 之前的一页
+ */
+async function loadHistory(sessionId, opts = {}) {
+  const empty = { id: sessionId, cwd: '', items: [], hasMore: false, nextBefore: 0, total: 0 };
   if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) return empty;
   if (!fs.existsSync(PROJECTS_DIR)) return empty;
 
@@ -516,48 +539,29 @@ async function loadHistory(sessionId) {
   }
   if (!file) return empty;
 
-  let cwd = '';
-  const items = [];
-  const push = (item) => {
-    items.push(item);
-    if (items.length > HISTORY_LIMIT) items.shift();
+  let entry;
+  try { entry = await parseHistoryFile(file); } catch { return empty; }
+
+  const total = entry.items.length;
+  const limitRaw = Number.parseInt(opts?.limit, 10);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : HISTORY_PAGE_SIZE, 1), 1000);
+
+  const beforeRaw = typeof opts?.before === 'number'
+    ? opts.before
+    : Number.parseInt(opts?.before, 10);
+  const before = Number.isInteger(beforeRaw)
+    ? Math.min(Math.max(beforeRaw, 0), total)
+    : total;
+
+  const start = Math.max(0, before - limit);
+  return {
+    id: sessionId,
+    cwd: entry.cwd,
+    items: entry.items.slice(start, before),
+    hasMore: start > 0,
+    nextBefore: start,
+    total,
   };
-  const onCwd = (value) => { cwd = value; };
-
-  // 大文件先读最后 2MB；如果已经拿到足够多的条目，就不必读整个文件
-  let stat;
-  try { stat = fs.statSync(file); } catch { return empty; }
-  if (stat.size > HISTORY_TAIL_BYTES) {
-    try {
-      for (const line of readTailLines(file, HISTORY_TAIL_BYTES)) {
-        if (!line.trim()) continue;
-        let rec;
-        try { rec = JSON.parse(line); } catch { continue; }
-        appendHistoryRecord(rec, push, onCwd);
-      }
-    } catch { /* 回退到完整读取 */ }
-  }
-
-  // 尾部不够 300 条时完整读一遍，保证历史尽量完整
-  if (items.length < HISTORY_LIMIT) {
-    items.length = 0;
-    cwd = '';
-    try {
-      const rl = readline.createInterface({
-        input: fs.createReadStream(file, { encoding: 'utf8' }),
-        crlfDelay: Infinity,
-      });
-      for await (const line of rl) {
-        if (!line.trim()) continue;
-        let rec;
-        try { rec = JSON.parse(line); } catch { continue; }
-        appendHistoryRecord(rec, push, onCwd);
-      }
-    } catch { /* 返回已经读到的部分 */ }
-  }
-
-  if (!cwd) cwd = findCwdInHead(file);
-  return { id: sessionId, cwd, items };
 }
 
 // ---------------------------------------------------------------- CLI 进程
@@ -1077,7 +1081,7 @@ ipcMain.handle('sessions:list', () => {
   perf('list-sessions', `+${Date.now() - t}ms n=${rows.length}`);
   return rows;
 });
-ipcMain.handle('sessions:history', (_e, id) => loadHistory(id));
+ipcMain.handle('sessions:history', (_e, id, opts) => loadHistory(id, opts));
 
 ipcMain.handle('dialog:pickFolder', async () => {
   const res = await dialog.showOpenDialog(win, {

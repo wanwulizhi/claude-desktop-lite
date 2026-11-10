@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
-  history: (id) => ipcRenderer.invoke('sessions:history', id),
+  history: (id, opts) => ipcRenderer.invoke('sessions:history', id, opts),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
 
   listCommands: (cwd) => ipcRenderer.invoke('commands:list', cwd),
