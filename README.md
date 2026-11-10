@@ -43,7 +43,7 @@ npm start
 ```
 
 也可以直接下载 [Release v0.4.3](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
-中的 `Claude Desktop Lite Setup 0.4.3.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
+中的 `Claude.Desktop.Lite.Setup.0.4.3.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
 
 ## 已实现
 
