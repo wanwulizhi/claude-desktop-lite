@@ -47,6 +47,7 @@ let currentPerm = null;
 let questionQueue = [];
 let currentQuestion = null;
 const toolCards = new Map();
+let readGroup = null;
 
 // 流式渲染状态
 let streamState = null; // { id, text, el, raf }
@@ -161,6 +162,7 @@ function scrollBottom() {
 function clearMessages() {
   messagesEl.innerHTML = '';
   toolCards.clear();
+  readGroup = null;
 }
 
 function showEmpty() {
@@ -179,6 +181,7 @@ function removeEmpty() {
 }
 
 function addMessage(kind, text) {
+  readGroup = null;
   removeEmpty();
   const div = document.createElement('div');
   div.className = `msg ${kind}`;
@@ -191,6 +194,7 @@ function addMessage(kind, text) {
 }
 
 function addSystem(text, isError = false) {
+  readGroup = null;
   removeEmpty();
   const div = document.createElement('div');
   div.className = 'msg assistant';
@@ -200,6 +204,7 @@ function addSystem(text, isError = false) {
 }
 
 function addThinking(text) {
+  readGroup = null;
   removeEmpty();
   const div = document.createElement('div');
   div.className = 'thinking';
@@ -219,39 +224,462 @@ function summarizeTool(name, input) {
   return s.length > 80 ? s.slice(0, 80) + '…' : s;
 }
 
-function addToolUse({ id, name, input }) {
+// ---------------------------------------------------------------- 工具卡片视图
+
+const TOOL_ICONS = {
+  Bash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
+  Read: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>',
+  default: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+};
+const STATUS_ICONS = {
+  ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>',
+  err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+};
+const CHEVRON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+const SPINNER = '<span class="tool-spinner"></span>';
+
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell', 'Shell']);
+
+function toolIcon(name) {
+  if (SHELL_TOOLS.has(name)) return TOOL_ICONS.Bash;
+  return TOOL_ICONS[name] || TOOL_ICONS.default;
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** 去掉终端 ANSI 颜色/光标控制码 */
+function stripAnsi(text) {
+  return String(text || '').replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
+function firstLine(text) {
+  const line = String(text || '').split('\n')[0].trim();
+  return line.length > 80 ? line.slice(0, 80) + '…' : line;
+}
+
+function basenameOf(p) {
+  return String(p || '').split(/[\\/]/).filter(Boolean).pop() || p || '';
+}
+
+function displayPath(p) {
+  if (!p) return '';
+  const cwd = state.cwd;
+  if (cwd) {
+    const norm = String(cwd).replace(/[\\/]+$/, '');
+    if (p.startsWith(norm + '\\') || p.startsWith(norm + '/')) {
+      return p.slice(norm.length).replace(/^[\\/]+/, '') || p;
+    }
+  }
+  return p;
+}
+
+function toolButton(label, onClick, title) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tool-btn';
+  btn.textContent = label;
+  if (title) btn.title = title;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onClick(btn);
+  });
+  return btn;
+}
+
+async function copyWithFeedback(btn, text) {
+  try {
+    await navigator.clipboard.writeText(text || '');
+    const old = btn.textContent;
+    btn.textContent = '已复制';
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  } catch { /* ignore */ }
+}
+
+function createToolCard({ id, name, summary }) {
   removeEmpty();
   const card = document.createElement('div');
   card.className = 'tool-card';
-  card.dataset.id = id;
+  if (id) card.dataset.id = id;
   card.innerHTML = `
     <div class="tool-inner">
-      <div class="tool-head">
-        <span class="dot"></span>
+      <div class="tool-head" role="button" tabindex="0" aria-expanded="false">
+        <span class="tool-icon">${toolIcon(name)}</span>
         <span class="tool-name">${escapeHtml(name)}</span>
-        <span class="tool-summary">${escapeHtml(summarizeTool(name, input))}</span>
+        <span class="tool-summary">${escapeHtml(summary || '')}</span>
+        <span class="tool-meta"></span>
+        <span class="tool-status running" title="运行中">${SPINNER}</span>
+        <span class="tool-chevron">${CHEVRON_ICON}</span>
       </div>
-      <div class="tool-body" hidden><pre></pre></div>
+      <div class="tool-body" hidden></div>
     </div>`;
-  card.querySelector('.tool-body pre').textContent = JSON.stringify(input, null, 2);
-  card.querySelector('.tool-head').addEventListener('click', () => {
-    const body = card.querySelector('.tool-body');
-    body.hidden = !body.hidden;
+
+  const head = card.querySelector('.tool-head');
+  const body = card.querySelector('.tool-body');
+  const summaryEl = card.querySelector('.tool-summary');
+  const metaEl = card.querySelector('.tool-meta');
+  const statusEl = card.querySelector('.tool-status');
+  let expanded = false;
+
+  const view = {
+    card,
+    head,
+    body,
+    startedAt: performance.now(),
+    setSummary(text) {
+      summaryEl.textContent = text || '';
+      summaryEl.title = text || '';
+    },
+    setMeta(text) {
+      metaEl.textContent = text || '';
+    },
+    setStatus(status) {
+      statusEl.className = `tool-status ${status}`;
+      statusEl.innerHTML = status === 'running' ? SPINNER : (STATUS_ICONS[status] || '');
+      statusEl.title = status === 'running' ? '运行中' : status === 'ok' ? '成功' : '失败';
+      card.classList.toggle('ok', status === 'ok');
+      card.classList.toggle('err', status === 'err');
+    },
+    setExpanded(open) {
+      expanded = !!open;
+      body.hidden = !expanded;
+      card.classList.toggle('open', expanded);
+      head.setAttribute('aria-expanded', String(expanded));
+    },
+    isExpanded() { return expanded; },
+    toggle() { view.setExpanded(!expanded); },
+    setResultDuration() {
+      const ms = performance.now() - view.startedAt;
+      if (ms >= 50) view.setMeta(formatDuration(ms));
+    },
+  };
+
+  head.addEventListener('click', () => view.toggle());
+  head.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      view.toggle();
+    }
   });
-  toolCards.set(id, card);
+
   messagesEl.appendChild(card);
   scrollBottom();
+  return view;
 }
 
-function addToolResult({ toolUseId, isError, text }) {
-  const card = toolCards.get(toolUseId);
-  if (!card) return;
-  card.classList.add(isError ? 'err' : 'ok');
-  const body = card.querySelector('.tool-body');
-  const pre = document.createElement('pre');
-  pre.textContent = text || '(无输出)';
-  body.appendChild(pre);
-  if (isError) body.hidden = false;
+function createBashView({ id, name, input }) {
+  const command = typeof input?.command === 'string' ? input.command : '';
+  const description = typeof input?.description === 'string' ? input.description : '';
+  const isPowerShell = name === 'PowerShell';
+  const shellLang = isPowerShell ? 'powershell' : 'bash';
+  const prompt = isPowerShell ? '>' : '$';
+  const view = createToolCard({ id, name, summary: description || firstLine(command) || name });
+
+  view.body.innerHTML = `
+    <div class="tool-command">
+      <span class="tool-prompt">${prompt}</span>
+      <pre><code class="language-${shellLang}"></code></pre>
+      <span class="tool-command-actions"></span>
+    </div>
+    <div class="tool-output-wrap">
+      <div class="tool-output-head">
+        <span class="tool-output-label">输出</span>
+        <span class="tool-cwd"></span>
+        <span class="tool-output-meta"></span>
+        <span class="tool-output-actions"></span>
+      </div>
+      <pre class="tool-output"><code class="tool-output-code tool-output-empty">运行中…</code></pre>
+    </div>`;
+
+  const commandCode = view.body.querySelector('.tool-command code');
+  commandCode.textContent = command || '(无命令)';
+  if (command && window.Prism) {
+    try { Prism.highlightElement(commandCode); } catch { /* ignore */ }
+  }
+
+  const cwdEl = view.body.querySelector('.tool-cwd');
+  if (state.cwd) {
+    cwdEl.textContent = state.cwd;
+    cwdEl.title = state.cwd;
+  }
+
+  const outputPre = view.body.querySelector('.tool-output');
+  const outputCode = view.body.querySelector('.tool-output-code');
+  const outputMeta = view.body.querySelector('.tool-output-meta');
+  const outputActions = view.body.querySelector('.tool-output-actions');
+  const commandActions = view.body.querySelector('.tool-command-actions');
+
+  commandActions.appendChild(toolButton('复制命令', (b) => copyWithFeedback(b, command)));
+
+  let cleanOutput = '';
+  let outputExpanded = false;
+  const copyOut = toolButton('复制输出', (b) => copyWithFeedback(b, cleanOutput));
+  copyOut.hidden = true;
+  const expandOut = toolButton('显示全部', () => {
+    outputExpanded = !outputExpanded;
+    outputPre.classList.toggle('expanded', outputExpanded);
+    expandOut.textContent = outputExpanded ? '收起' : '显示全部';
+  });
+  expandOut.hidden = true;
+  outputActions.append(copyOut, expandOut);
+
+  view.setResult = ({ isError, text, truncated, totalLength }) => {
+    cleanOutput = stripAnsi(text || '').replace(/\r\n/g, '\n');
+    outputCode.textContent = cleanOutput || '(无输出)';
+    outputCode.classList.toggle('tool-output-empty', !cleanOutput);
+    const lines = cleanOutput ? cleanOutput.split('\n').length : 0;
+    const bits = [];
+    if (lines) bits.push(`${lines} 行`);
+    if (truncated) bits.push(`已截断（共 ${totalLength} 字符）`);
+    outputMeta.textContent = bits.join(' · ');
+    copyOut.hidden = !cleanOutput;
+    expandOut.hidden = lines <= 12;
+    if (lines <= 12) {
+      outputPre.classList.remove('expanded');
+      outputExpanded = false;
+      expandOut.textContent = '显示全部';
+    }
+    view.setStatus(isError ? 'err' : 'ok');
+    view.setResultDuration();
+    if (isError) view.setExpanded(true);
+  };
+
+  return view;
+}
+
+function createGenericView({ id, name, input }) {
+  const view = createToolCard({ id, name, summary: summarizeTool(name, input) });
+  view.body.innerHTML = `
+    <div class="tool-generic">
+      <div class="tool-generic-label">参数</div>
+      <pre class="tool-input"></pre>
+      <div class="tool-generic-label tool-result-label" hidden>结果</div>
+      <pre class="tool-output tool-generic-output" hidden></pre>
+    </div>`;
+  view.body.querySelector('.tool-input').textContent = JSON.stringify(input ?? {}, null, 2);
+
+  const outputEl = view.body.querySelector('.tool-generic-output');
+  const resultLabel = view.body.querySelector('.tool-result-label');
+
+  view.setResult = ({ isError, text }) => {
+    const clean = stripAnsi(text || '');
+    outputEl.textContent = clean || '(无输出)';
+    outputEl.hidden = false;
+    resultLabel.hidden = false;
+    view.setStatus(isError ? 'err' : 'ok');
+    view.setResultDuration();
+    if (isError) view.setExpanded(true);
+  };
+
+  return view;
+}
+
+function readLanguage(path) {
+  const ext = (String(path).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase();
+  const map = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    ts: 'typescript', tsx: 'tsx', jsx: 'jsx',
+    json: 'json', md: 'markdown', markdown: 'markdown',
+    py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash',
+    ps1: 'powershell', yml: 'yaml', yaml: 'yaml', sql: 'sql',
+    css: 'css', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup',
+  };
+  return map[ext] || 'text';
+}
+
+function readLanguageLabel(path) {
+  const lang = readLanguage(path);
+  return lang === 'text' ? 'Text' : lang[0].toUpperCase() + lang.slice(1);
+}
+
+/** CLI 的 Read 结果格式是 `行号\t内容`；匹配率足够高才按行号视图渲染 */
+function parseNumberedText(text) {
+  const rawLines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const lines = [];
+  let matched = 0;
+  for (const raw of rawLines) {
+    const m = /^\s*(\d+)\t(.*)$/.exec(raw);
+    if (m) {
+      matched++;
+      lines.push({ n: m[1], text: m[2] });
+    } else {
+      lines.push({ n: '', text: raw });
+    }
+  }
+  if (matched < Math.max(1, Math.ceil(rawLines.length * 0.8))) return null;
+  return { lines, code: lines.map((l) => l.text).join('\n') };
+}
+
+function updateReadSummary(group) {
+  const names = [...group.entries.values()].map((e) => e.name).filter(Boolean);
+  let summary = '';
+  if (names.length <= 3) summary = names.join(', ');
+  else summary = `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+  group.card.setSummary(summary);
+}
+
+function getOrCreateReadGroup() {
+  if (readGroup) return readGroup;
+  const card = createToolCard({ name: 'Read', summary: '' });
+  card.body.innerHTML = '<div class="read-files"></div>';
+  readGroup = {
+    card,
+    filesEl: card.body.querySelector('.read-files'),
+    entries: new Map(),
+    pending: 0,
+    hasError: false,
+  };
+  return readGroup;
+}
+
+function createReadEntry({ id, input }) {
+  const group = getOrCreateReadGroup();
+  const path = typeof input?.file_path === 'string'
+    ? input.file_path
+    : (typeof input?.path === 'string' ? input.path : '');
+  const name = basenameOf(path) || '文件';
+
+  const entry = document.createElement('div');
+  entry.className = 'read-file';
+  entry.dataset.id = id;
+  entry.innerHTML = `
+    <div class="read-file-head">
+      <span class="read-file-icon">${TOOL_ICONS.Read}</span>
+      <span class="read-path"></span>
+      <span class="read-file-meta"></span>
+      <span class="read-file-status running">${SPINNER}</span>
+      <span class="read-file-actions"></span>
+    </div>
+    <div class="read-file-body">
+      <div class="read-empty">等待读取…</div>
+      <div class="read-code" hidden>
+        <pre class="read-gutter" aria-hidden="true"></pre>
+        <pre class="read-content"><code></code></pre>
+      </div>
+    </div>`;
+
+  const pathEl = entry.querySelector('.read-path');
+  pathEl.textContent = displayPath(path) || name;
+  pathEl.title = path || name;
+
+  const metaEl = entry.querySelector('.read-file-meta');
+  const statusEl = entry.querySelector('.read-file-status');
+  const emptyEl = entry.querySelector('.read-empty');
+  const codeWrap = entry.querySelector('.read-code');
+  const gutterEl = entry.querySelector('.read-gutter');
+  const codeEl = entry.querySelector('.read-content code');
+  const actionsEl = entry.querySelector('.read-file-actions');
+
+  let codeText = '';
+  let codeExpanded = false;
+
+  const copyBtn = toolButton('复制', (b) => copyWithFeedback(b, codeText));
+  copyBtn.hidden = true;
+  const openBtn = toolButton('打开', () => {
+    if (path) window.api.openPath(path).catch(() => {});
+  }, '用默认程序打开');
+  openBtn.hidden = !path;
+  const folderBtn = toolButton('定位', () => {
+    if (path) window.api.showInFolder(path).catch(() => {});
+  }, '在资源管理器中显示');
+  folderBtn.hidden = !path;
+  const expandBtn = toolButton('显示全部', () => {
+    codeExpanded = !codeExpanded;
+    codeWrap.classList.toggle('expanded', codeExpanded);
+    expandBtn.textContent = codeExpanded ? '收起' : '显示全部';
+  });
+  expandBtn.hidden = true;
+  actionsEl.append(copyBtn, openBtn, folderBtn, expandBtn);
+
+  const view = {
+    card: group.card,
+    group,
+    name,
+    path,
+    setResult({ isError, text, truncated, totalLength }) {
+      group.pending = Math.max(0, group.pending - 1);
+      if (isError) group.hasError = true;
+
+      statusEl.className = `read-file-status ${isError ? 'err' : 'ok'}`;
+      statusEl.innerHTML = isError ? STATUS_ICONS.err : STATUS_ICONS.ok;
+      entry.classList.toggle('err', isError);
+
+      const raw = stripAnsi(text || '').replace(/\r\n/g, '\n');
+      const parsed = parseNumberedText(raw);
+      const lines = raw ? raw.split('\n').length : 0;
+      codeText = parsed ? parsed.code : raw;
+
+      if (isError) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = raw || '读取失败';
+        codeWrap.hidden = true;
+      } else if (!raw) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = '(空文件)';
+        codeWrap.hidden = true;
+      } else {
+        emptyEl.hidden = true;
+        codeWrap.hidden = false;
+        gutterEl.textContent = parsed ? parsed.lines.map((l) => l.n).join('\n') : '';
+        gutterEl.hidden = !parsed;
+        codeEl.textContent = codeText;
+        const lang = readLanguage(path);
+        codeEl.className = lang === 'text' ? '' : `language-${lang}`;
+        if (lang !== 'text' && window.Prism) {
+          try { Prism.highlightElement(codeEl); } catch { /* ignore */ }
+        }
+      }
+
+      const meta = [];
+      if (lines) meta.push(`${lines} 行`);
+      if (path) meta.push(readLanguageLabel(path));
+      if (truncated) meta.push(`已截断（共 ${totalLength} 字符）`);
+      metaEl.textContent = meta.join(' · ');
+
+      copyBtn.hidden = !codeText;
+      expandBtn.hidden = lines <= 20;
+      if (lines <= 20) {
+        codeWrap.classList.remove('expanded');
+        codeExpanded = false;
+        expandBtn.textContent = '显示全部';
+      }
+
+      group.card.setStatus(group.pending > 0 ? 'running' : (group.hasError ? 'err' : 'ok'));
+      if (group.pending === 0 && !group.hasError) group.card.setResultDuration();
+      if (isError) group.card.setExpanded(true);
+    },
+  };
+
+  group.entries.set(id, view);
+  group.filesEl.appendChild(entry);
+  group.pending++;
+  group.card.setStatus('running');
+  updateReadSummary(group);
+  toolCards.set(id, view);
+  scrollBottom();
+  return view;
+}
+
+function addToolUse({ id, name, input }) {
+  if (name === 'Read') {
+    createReadEntry({ id, input });
+    return;
+  }
+
+  // 非 Read 工具会打断连续的 Read 分组
+  readGroup = null;
+  const view = SHELL_TOOLS.has(name)
+    ? createBashView({ id, name, input })
+    : createGenericView({ id, name, input });
+  toolCards.set(id, view);
+}
+
+function addToolResult({ toolUseId, isError, text, truncated, totalLength }) {
+  const view = toolCards.get(toolUseId);
+  if (!view || typeof view.setResult !== 'function') return;
+  view.setResult({ isError, text, truncated, totalLength });
 }
 
 function handleStream(ev) {
@@ -272,6 +700,7 @@ function handleStream(ev) {
     streamState.text += ev.text;
 
     if (!streamState.el) {
+      readGroup = null;
       removeEmpty();
       const div = document.createElement('div');
       div.className = 'msg assistant';
@@ -432,6 +861,7 @@ async function addAttachmentDataUrl(dataUrl, name) {
 }
 
 async function addUserMessage(text, images) {
+  readGroup = null;
   removeEmpty();
   const div = document.createElement('div');
   div.className = 'msg user';
@@ -1335,6 +1765,10 @@ window.api.onEvent((ev) => {
         console.log('[e2e] rendered', JSON.stringify(rendered), 'deltas=', e2eDeltaCount);
         const firstAssistant = messagesEl.querySelector('.msg.assistant');
         if (firstAssistant) firstAssistant.scrollIntoView({ block: 'start' });
+        // 仅测试模式：展开所有尚未展开的工具卡片，方便截图检查 Bash/Read 视图
+        document.querySelectorAll('.tool-head').forEach((head) => {
+          if (head.getAttribute('aria-expanded') === 'false') head.click();
+        });
 
         const params = new URLSearchParams(location.search);
         if (params.get('switch') === '1' && !window.__switchTested) {

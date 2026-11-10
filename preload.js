@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('api', {
     try { return webUtils.getPathForFile(file) || ''; } catch { return ''; }
   },
   openExternal: (url) => ipcRenderer.send('shell:openExternal', url),
+  openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
+  showInFolder: (p) => ipcRenderer.invoke('shell:showInFolder', p),
 
   start: (opts) => ipcRenderer.invoke('chat:start', opts),
   send: (payload) => ipcRenderer.invoke('chat:send', payload),

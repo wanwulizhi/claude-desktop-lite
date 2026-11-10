@@ -23,6 +23,11 @@
   "build": {
     "appId": "com.claudedesktoplite.app",
     "productName": "Claude Desktop Lite",
+    "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "build"

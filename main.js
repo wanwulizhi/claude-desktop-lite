@@ -24,6 +24,7 @@ const HISTORY_LIMIT = 300;
 const HISTORY_TAIL_BYTES = 2 * 1024 * 1024;
 const INIT_TIMEOUT_MS = 20000;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const TOOL_RESULT_LIMIT = 50000;
 
 /** 会话列表的标题/cwd 缓存：文件 mtime+size 不变就不重读头部 */
 const sessionMetaCache = new Map();
@@ -178,6 +179,11 @@ function createWindow() {
       app.quit();
     });
   }
+}
+
+// 测试隔离：允许用独立 userData 跑开发版，避免和正在运行的打包版抢单实例锁
+if (process.env.CDS_USER_DATA) {
+  try { app.setPath('userData', process.env.CDS_USER_DATA); } catch { /* ignore */ }
 }
 
 // 单实例：第二个进程直接聚焦已有窗口，避免两个 CLI 同时写同一个会话
@@ -467,11 +473,14 @@ function appendHistoryRecord(rec, push, onCwd) {
     } else if (b.type === 'tool_use') {
       push({ kind: 'tool_use', id: b.id, name: b.name, input: b.input });
     } else if (b.type === 'tool_result') {
+      const full = textFromContent(b.content);
       push({
         kind: 'tool_result',
         toolUseId: b.tool_use_id,
         isError: !!b.is_error,
-        text: textFromContent(b.content).slice(0, 4000),
+        text: full.slice(0, TOOL_RESULT_LIMIT),
+        truncated: full.length > TOOL_RESULT_LIMIT,
+        totalLength: full.length,
       });
     }
   }
@@ -760,11 +769,14 @@ function handleEvent(ev, child) {
       if (!Array.isArray(blocks)) break;
       for (const b of blocks) {
         if (b.type === 'tool_result') {
+          const full = textFromContent(b.content);
           send('block', {
             kind: 'tool_result',
             toolUseId: b.tool_use_id,
             isError: !!b.is_error,
-            text: textFromContent(b.content).slice(0, 6000),
+            text: full.slice(0, TOOL_RESULT_LIMIT),
+            truncated: full.length > TOOL_RESULT_LIMIT,
+            totalLength: full.length,
           });
         }
       }
@@ -1128,6 +1140,29 @@ ipcMain.on('chat:answerQuestion', (_e, payload) => sendQuestionAnswer(payload ||
 ipcMain.on('chat:stop', () => stopRuntime());
 
 ipcMain.on('shell:openExternal', (_e, url) => openExternalSafe(url));
+
+/** 工具卡片里的“打开文件/在资源管理器中显示”：只接受存在的绝对路径 */
+async function validFilePath(p) {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return false;
+  try {
+    const st = await fs.promises.stat(p);
+    return st.isFile();
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle('shell:openPath', async (_e, p) => {
+  if (!(await validFilePath(p))) return false;
+  const err = await shell.openPath(p);
+  return !err;
+});
+
+ipcMain.handle('shell:showInFolder', async (_e, p) => {
+  if (!(await validFilePath(p))) return false;
+  shell.showItemInFolder(p);
+  return true;
+});
 
 // 端到端测试钩子（仅在 CDS_E2E=1 时由渲染进程调用）
 ipcMain.on('e2e:done', async () => {
