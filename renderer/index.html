@@ -37,6 +37,13 @@
       <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
       <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/>
     </symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24">
+      <path d="M20.2 14.3A8.3 8.3 0 1 1 9.7 3.8a6.5 6.5 0 0 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
     <symbol id="i-paperclip" viewBox="0 0 24 24">
       <path d="M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l7.8-7.8a3.4 3.4 0 0 1 4.8 4.8l-7.8 7.8a1.8 1.8 0 0 1-2.6-2.6l7.1-7.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
@@ -117,8 +124,8 @@
           <span id="status" class="status idle">就绪</span>
         </div>
         <div class="top-right">
-          <button id="theme-btn" class="icon-btn" type="button" title="切换主题" aria-label="切换主题">
-            <svg class="icon"><use href="#i-contrast"></use></svg>
+          <button id="theme-btn" class="icon-btn" type="button" title="主题：跟随系统" aria-label="主题：跟随系统">
+            <svg class="icon"><use id="theme-icon" href="#i-contrast"></use></svg>
           </button>
           <button id="model-label" class="model-label" type="button" title="切换模型">
             <span id="model-label-text">默认模型</span>

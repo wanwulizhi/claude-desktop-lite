@@ -38,9 +38,9 @@ const PERMISSION_MODES = [
 ];
 
 const THEME_MODES = [
-  { id: 'system', label: '跟随系统' },
-  { id: 'light', label: '亮色' },
-  { id: 'dark', label: '暗色' },
+  { id: 'system', label: '跟随系统', icon: 'i-contrast' },
+  { id: 'light', label: '亮色', icon: 'i-sun' },
+  { id: 'dark', label: '暗色', icon: 'i-moon' },
 ];
 let permQueue = [];
 let currentPerm = null;
@@ -1174,10 +1174,24 @@ function renderThemeMenu() {
     const el = document.createElement('div');
     const active = theme.id === state.theme;
     el.className = `model-item${active ? ' active' : ''}`;
-    el.innerHTML = `<span class="mi-label">${escapeHtml(theme.label)}</span>` +
+    el.innerHTML =
+      `<span class="mi-icon"><svg class="icon"><use href="#${theme.icon}"></use></svg></span>` +
+      `<span class="mi-label">${escapeHtml(theme.label)}</span>` +
       (active ? CHECK_ICON : '');
     el.addEventListener('click', () => selectTheme(theme.id));
     menu.appendChild(el);
+  }
+}
+
+/** 主题按钮图标跟随当前模式：跟随系统 / 太阳 / 月亮 */
+function updateThemeIcon() {
+  const mode = THEME_MODES.find((t) => t.id === state.theme) || THEME_MODES[0];
+  const use = $('theme-icon');
+  if (use) use.setAttribute('href', `#${mode.icon}`);
+  const btn = $('theme-btn');
+  if (btn) {
+    btn.title = `主题：${mode.label}`;
+    btn.setAttribute('aria-label', `主题：${mode.label}`);
   }
 }
 
@@ -1199,10 +1213,12 @@ async function selectTheme(mode) {
   closeThemeMenu();
   state.theme = mode;
   localStorage.setItem('cds.theme', mode);
+  updateThemeIcon();
   await window.api.setTheme(mode);
 }
 
 async function initTheme() {
+  updateThemeIcon();
   await window.api.setTheme(state.theme);
 }
 

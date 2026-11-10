@@ -632,6 +632,18 @@ kbd {
   font-size: 9.5px;
 }
 
+.model-item .mi-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.model-item .mi-icon .icon { width: 15px; height: 15px; }
+.model-item.active .mi-icon { color: var(--accent); }
+
 .mi-check {
   width: 12px;
   height: 12px;
