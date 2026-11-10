@@ -235,9 +235,30 @@ function summarizeTool(name, input) {
 
 // ---------------------------------------------------------------- 工具卡片视图
 
+const EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const WRITE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 13v6M9 16h6"/></svg>';
+const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>';
+const TODO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 2.5 2.5L16 9"/></svg>';
+const GLOBE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18"/><path d="M12 3a15 15 0 0 0 0 18"/></svg>';
+const TASK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/></svg>';
+const NOTEBOOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v18"/><path d="M12 7h4M12 11h4"/></svg>';
+const SKILL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><path d="M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" opacity=".55"/></svg>';
+
 const TOOL_ICONS = {
   Bash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
   Read: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>',
+  Edit: EDIT_ICON,
+  MultiEdit: EDIT_ICON,
+  Write: WRITE_ICON,
+  Glob: SEARCH_ICON,
+  Grep: SEARCH_ICON,
+  TodoWrite: TODO_ICON,
+  WebFetch: GLOBE_ICON,
+  WebSearch: GLOBE_ICON,
+  Task: TASK_ICON,
+  Agent: TASK_ICON,
+  Skill: SKILL_ICON,
+  NotebookEdit: NOTEBOOK_ICON,
   default: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
 };
 const STATUS_ICONS = {
@@ -486,6 +507,465 @@ function createGenericView({ id, name, input }) {
   return view;
 }
 
+// ---------------------------------------------------------------- 结构化工具视图
+
+function splitLines(text) {
+  return String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+}
+
+function lineCount(text) {
+  if (!text) return 0;
+  return splitLines(text).length;
+}
+
+function fileHeadHtml(icon) {
+  return `<div class="file-head">
+    <span class="file-head-icon">${icon}</span>
+    <span class="file-head-path"></span>
+    <span class="file-head-meta"></span>
+    <span class="file-head-actions"></span>
+  </div>`;
+}
+
+function createOutputSection(container, label = '结果') {
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-output-wrap view-result';
+  wrap.hidden = true;
+  wrap.innerHTML = `
+    <div class="tool-output-head">
+      <span class="tool-output-label">${escapeHtml(label)}</span>
+      <span class="tool-output-meta"></span>
+      <span class="tool-output-actions"></span>
+    </div>
+    <pre class="tool-output"></pre>`;
+  container.appendChild(wrap);
+  return {
+    wrap,
+    pre: wrap.querySelector('.tool-output'),
+    meta: wrap.querySelector('.tool-output-meta'),
+    actions: wrap.querySelector('.tool-output-actions'),
+    clean: '',
+  };
+}
+
+function fillOutput(section, { isError, text, truncated, totalLength }, { showOnSuccess = true } = {}) {
+  const clean = stripAnsi(text || '').replace(/\r\n/g, '\n');
+  section.clean = clean;
+  const visible = isError || (!!clean && showOnSuccess);
+  section.wrap.hidden = !visible;
+  section.pre.textContent = clean || '(无输出)';
+  section.pre.classList.toggle('tool-output-empty', !clean);
+  const bits = [];
+  if (truncated) bits.push(`已截断（共 ${totalLength} 字符）`);
+  section.meta.textContent = bits.join(' · ');
+  return clean;
+}
+
+function bindResult(view, section, { showOnSuccess = true } = {}) {
+  section.actions.appendChild(
+    toolButton('复制结果', (b) => copyWithFeedback(b, section.clean || ''))
+  );
+  view.setResult = (res) => {
+    fillOutput(section, res, { showOnSuccess });
+    view.setStatus(res.isError ? 'err' : 'ok');
+    view.setResultDuration();
+    if (res.isError) view.setExpanded(true);
+  };
+}
+
+function renderDiffHtml(oldText, newText) {
+  const oldLines = oldText ? splitLines(oldText) : [];
+  const newLines = newText ? splitLines(newText) : [];
+  if (!oldLines.length && !newLines.length) return '<div class="diff-empty">（无内容）</div>';
+
+  const rows = [];
+  for (const line of oldLines) {
+    rows.push(`<div class="diff-line del"><span class="diff-sign">−</span><span class="diff-text">${escapeHtml(line)}</span></div>`);
+  }
+  for (const line of newLines) {
+    rows.push(`<div class="diff-line add"><span class="diff-sign">+</span><span class="diff-text">${escapeHtml(line)}</span></div>`);
+  }
+
+  const max = 400;
+  if (rows.length <= max) return rows.join('');
+  return rows.slice(0, max).join('') + `<div class="diff-more">还有 ${rows.length - max} 行未显示</div>`;
+}
+
+function createEditView({ id, name, input }) {
+  const filePath = typeof input?.file_path === 'string' ? input.file_path : '';
+  const rawEdits = Array.isArray(input?.edits) && input.edits.length
+    ? input.edits
+    : [{ old_string: input?.old_string, new_string: input?.new_string, replace_all: input?.replace_all }];
+  const edits = rawEdits.filter((edit) => edit
+    && (typeof edit.old_string === 'string' || typeof edit.new_string === 'string'));
+
+  const view = createToolCard({
+    id,
+    name,
+    summary: displayPath(filePath) || basenameOf(filePath) || name,
+  });
+  view.body.innerHTML = `
+    <div class="edit-view">
+      ${fileHeadHtml(TOOL_ICONS[name] || TOOL_ICONS.Edit)}
+      <div class="edit-blocks"></div>
+    </div>`;
+
+  const pathEl = view.body.querySelector('.file-head-path');
+  pathEl.textContent = displayPath(filePath) || filePath || '(未指定文件)';
+  pathEl.title = filePath;
+  view.body.querySelector('.file-head-meta').textContent =
+    `${edits.length} 处修改 · ${readLanguageLabel(filePath)}`;
+
+  const headActions = view.body.querySelector('.file-head-actions');
+  if (filePath) {
+    headActions.append(
+      toolButton('打开', () => window.api.openPath(filePath), '用默认程序打开'),
+      toolButton('定位', () => window.api.showInFolder(filePath), '在资源管理器中显示')
+    );
+  }
+
+  const blocksEl = view.body.querySelector('.edit-blocks');
+  if (!edits.length) {
+    blocksEl.innerHTML = '<div class="view-empty">没有可显示的修改内容。</div>';
+  }
+
+  edits.forEach((edit, index) => {
+    const oldText = typeof edit.old_string === 'string' ? edit.old_string : '';
+    const newText = typeof edit.new_string === 'string' ? edit.new_string : '';
+    const block = document.createElement('div');
+    block.className = 'edit-block';
+    block.innerHTML = `
+      <div class="edit-block-head">
+        <span class="edit-op">${edits.length > 1 ? `修改 ${index + 1}` : '修改'}</span>
+        <span class="edit-stat"><span class="del">−${lineCount(oldText)}</span> <span class="add">+${lineCount(newText)}</span></span>
+        ${edit.replace_all ? '<span class="edit-badge">全部替换</span>' : ''}
+        <span class="edit-block-actions"></span>
+      </div>
+      <div class="diff">${renderDiffHtml(oldText, newText)}</div>`;
+    block.querySelector('.edit-block-actions').appendChild(
+      toolButton('复制新内容', (b) => copyWithFeedback(b, newText))
+    );
+    blocksEl.appendChild(block);
+  });
+
+  const output = createOutputSection(view.body.querySelector('.edit-view'));
+  bindResult(view, output);
+  return view;
+}
+
+function createFileView({ id, name, path, content, meta, icon, language }) {
+  const view = createToolCard({
+    id,
+    name,
+    summary: displayPath(path) || basenameOf(path) || name,
+  });
+  view.body.innerHTML = `
+    <div class="file-view">
+      ${fileHeadHtml(icon)}
+      <pre class="file-content"><code></code></pre>
+    </div>`;
+
+  const pathEl = view.body.querySelector('.file-head-path');
+  pathEl.textContent = displayPath(path) || path || '(未指定文件)';
+  pathEl.title = path;
+  view.body.querySelector('.file-head-meta').textContent = meta || '';
+
+  const actions = view.body.querySelector('.file-head-actions');
+  actions.appendChild(toolButton('复制', (b) => copyWithFeedback(b, content)));
+  if (path) {
+    actions.append(
+      toolButton('打开', () => window.api.openPath(path), '用默认程序打开'),
+      toolButton('定位', () => window.api.showInFolder(path), '在资源管理器中显示')
+    );
+  }
+
+  const pre = view.body.querySelector('.file-content');
+  const code = pre.querySelector('code');
+  if (content) {
+    code.textContent = content;
+    if (language && language !== 'text') {
+      code.className = `language-${language}`;
+      if (window.Prism && content.length < 200000) {
+        try { Prism.highlightElement(code); } catch { /* ignore */ }
+      }
+    }
+    if (lineCount(content) > 20) {
+      actions.appendChild(toolButton('显示全部', (b) => {
+        const expanded = pre.classList.toggle('expanded');
+        b.textContent = expanded ? '收起' : '显示全部';
+      }));
+    }
+  } else {
+    pre.classList.add('file-content-empty');
+    code.textContent = '(空文件)';
+  }
+
+  const output = createOutputSection(view.body.querySelector('.file-view'));
+  bindResult(view, output);
+  return view;
+}
+
+function createWriteView({ id, name, input }) {
+  const path = typeof input?.file_path === 'string' ? input.file_path : '';
+  const content = typeof input?.content === 'string' ? input.content : '';
+  return createFileView({
+    id,
+    name,
+    path,
+    content,
+    meta: `${lineCount(content)} 行 · ${readLanguageLabel(path)}`,
+    icon: TOOL_ICONS.Write,
+    language: readLanguage(path),
+  });
+}
+
+function createNotebookView({ id, name, input }) {
+  const path = typeof input?.notebook_path === 'string' ? input.notebook_path : '';
+  const content = typeof input?.new_source === 'string' ? input.new_source : '';
+  const cell = input?.cell_number != null
+    ? `Cell ${input.cell_number}`
+    : (input?.cell_id ? `Cell ${input.cell_id}` : 'Cell');
+  return createFileView({
+    id,
+    name,
+    path,
+    content,
+    meta: `${cell} · ${input?.cell_type || 'code'} · ${lineCount(content)} 行`,
+    icon: TOOL_ICONS.NotebookEdit,
+    language: 'python',
+  });
+}
+
+function createSearchView({ id, name, input }) {
+  const pattern = typeof input?.pattern === 'string' ? input.pattern : '';
+  const scope = [
+    input?.path,
+    input?.glob ? `--glob ${input.glob}` : '',
+    input?.type ? `--type ${input.type}` : '',
+  ].filter(Boolean).join(' · ');
+
+  const view = createToolCard({ id, name, summary: pattern });
+  view.body.innerHTML = `
+    <div class="search-view">
+      <div class="search-query">
+        <span class="search-icon">${toolIcon(name)}</span>
+        <code class="search-pattern"></code>
+        <span class="search-scope"></span>
+        <span class="search-actions"></span>
+      </div>
+      <div class="search-meta"></div>
+      <div class="search-results"></div>
+    </div>`;
+
+  view.body.querySelector('.search-pattern').textContent = pattern || '(空)';
+  view.body.querySelector('.search-scope').textContent = scope;
+  const resultsEl = view.body.querySelector('.search-results');
+  const metaEl = view.body.querySelector('.search-meta');
+  let rawOutput = '';
+  view.body.querySelector('.search-actions').appendChild(
+    toolButton('复制结果', (b) => copyWithFeedback(b, rawOutput))
+  );
+
+  view.setResult = ({ isError, text, truncated }) => {
+    rawOutput = stripAnsi(text || '').replace(/\r\n/g, '\n').trim();
+    view.setStatus(isError ? 'err' : 'ok');
+    view.setResultDuration();
+    resultsEl.innerHTML = '';
+
+    if (isError) {
+      resultsEl.innerHTML = `<div class="search-empty">${escapeHtml(rawOutput || '搜索失败')}</div>`;
+      metaEl.textContent = '失败';
+      view.setExpanded(true);
+      return;
+    }
+
+    if (!rawOutput || /^No (files|matches) found/i.test(rawOutput)) {
+      resultsEl.innerHTML = '<div class="search-empty">没有匹配结果</div>';
+      metaEl.textContent = '0 条';
+      return;
+    }
+
+    const lines = rawOutput.split('\n').filter((line) => line.trim());
+    const rows = [];
+    for (const line of lines) {
+      if (name === 'Grep') {
+        let m = /^(.+?):(\d+):(.*)$/.exec(line);
+        if (m) { rows.push({ file: m[1], line: m[2], text: m[3] }); continue; }
+        m = /^(.+?):(\d+)$/.exec(line);
+        if (m) { rows.push({ file: m[1], line: m[2], text: '' }); continue; }
+      }
+      rows.push({ file: line, line: '', text: '' });
+    }
+
+    const max = 300;
+    for (const row of rows.slice(0, max)) {
+      const el = document.createElement('div');
+      el.className = `search-row${row.text ? '' : ' file'}`;
+      el.title = row.text || row.file;
+      const fileEl = document.createElement('span');
+      fileEl.className = 'search-file';
+      fileEl.textContent = row.file;
+      el.appendChild(fileEl);
+      if (row.line) {
+        const lineEl = document.createElement('span');
+        lineEl.className = 'search-line';
+        lineEl.textContent = `:${row.line}`;
+        el.appendChild(lineEl);
+      }
+      if (row.text) {
+        const textEl = document.createElement('span');
+        textEl.className = 'search-text';
+        textEl.textContent = row.text;
+        el.appendChild(textEl);
+      }
+      resultsEl.appendChild(el);
+    }
+
+    if (rows.length > max) {
+      const more = document.createElement('div');
+      more.className = 'search-empty';
+      more.textContent = `还有 ${rows.length - max} 条结果未显示`;
+      resultsEl.appendChild(more);
+    }
+
+    metaEl.textContent =
+      `${rows.length} ${name === 'Glob' ? '个文件' : '条结果'}${truncated ? ' · 已截断' : ''}`;
+  };
+  return view;
+}
+
+function createTodoView({ id, name, input }) {
+  const todos = Array.isArray(input?.todos) ? input.todos : [];
+  const done = todos.filter((item) => item?.status === 'completed').length;
+  const view = createToolCard({
+    id,
+    name,
+    summary: todos.length ? `${done}/${todos.length} 已完成` : '没有待办',
+  });
+  view.body.innerHTML = '<div class="todo-view"><div class="todo-list"></div></div>';
+
+  const list = view.body.querySelector('.todo-list');
+  if (!todos.length) {
+    list.innerHTML = '<div class="view-empty">没有待办事项。</div>';
+  }
+
+  for (const todo of todos) {
+    if (!todo) continue;
+    const status = ['completed', 'in_progress', 'pending'].includes(todo.status)
+      ? todo.status
+      : 'pending';
+    const item = document.createElement('div');
+    item.className = `todo-item ${status}`;
+    const icon = status === 'completed'
+      ? STATUS_ICONS.ok
+      : status === 'in_progress'
+        ? '<span class="todo-dot"></span>'
+        : '<span class="todo-circle"></span>';
+    item.innerHTML = `<span class="todo-check">${icon}</span><span class="todo-text"></span>`;
+    item.querySelector('.todo-text').textContent = todo.content || todo.activeForm || '';
+    list.appendChild(item);
+  }
+
+  const output = createOutputSection(view.body.querySelector('.todo-view'));
+  bindResult(view, output, { showOnSuccess: false });
+  return view;
+}
+
+function createWebView({ id, name, input }) {
+  const url = typeof input?.url === 'string' ? input.url : '';
+  const query = typeof input?.query === 'string' ? input.query : '';
+  const prompt = typeof input?.prompt === 'string' ? input.prompt : '';
+  const target = url || query;
+
+  const view = createToolCard({ id, name, summary: target });
+  view.body.innerHTML = `
+    <div class="web-view">
+      <div class="web-query">
+        <span class="web-icon">${toolIcon(name)}</span>
+        <span class="web-url"></span>
+        <span class="web-actions"></span>
+      </div>
+      <div class="web-prompt" hidden></div>
+      <pre class="web-result tool-output"></pre>
+    </div>`;
+
+  view.body.querySelector('.web-url').textContent = target || '(空)';
+  const promptEl = view.body.querySelector('.web-prompt');
+  if (prompt) {
+    promptEl.hidden = false;
+    promptEl.textContent = prompt;
+  }
+
+  const actions = view.body.querySelector('.web-actions');
+  if (/^https?:\/\//i.test(url)) {
+    actions.appendChild(toolButton('打开', () => window.api.openExternal(url), '在浏览器中打开'));
+  }
+  let rawOutput = '';
+  actions.appendChild(toolButton('复制结果', (b) => copyWithFeedback(b, rawOutput)));
+
+  const resultEl = view.body.querySelector('.web-result');
+  view.setResult = ({ isError, text }) => {
+    rawOutput = stripAnsi(text || '').replace(/\r\n/g, '\n');
+    resultEl.textContent = rawOutput || '(无输出)';
+    resultEl.classList.toggle('tool-output-empty', !rawOutput);
+    view.setStatus(isError ? 'err' : 'ok');
+    view.setResultDuration();
+    if (isError) view.setExpanded(true);
+  };
+  return view;
+}
+
+function createTaskView({ id, name, input }) {
+  const description = typeof input?.description === 'string' ? input.description : '';
+  const prompt = typeof input?.prompt === 'string' ? input.prompt : '';
+  const agent = typeof input?.subagent_type === 'string' ? input.subagent_type : '';
+
+  const view = createToolCard({
+    id,
+    name,
+    summary: description || firstLine(prompt) || name,
+  });
+  view.body.innerHTML = `
+    <div class="task-view">
+      <div class="task-meta"></div>
+      <pre class="task-prompt"></pre>
+    </div>`;
+
+  view.body.querySelector('.task-meta').textContent = agent ? `子代理：${agent}` : '子任务';
+  const promptEl = view.body.querySelector('.task-prompt');
+  if (prompt) promptEl.textContent = prompt;
+  else promptEl.hidden = true;
+
+  const output = createOutputSection(view.body.querySelector('.task-view'));
+  bindResult(view, output);
+  return view;
+}
+
+function createSkillView({ id, name, input }) {
+  const skill = typeof input?.skill === 'string'
+    ? input.skill
+    : (typeof input?.name === 'string' ? input.name : '');
+  const args = typeof input?.args === 'string'
+    ? input.args
+    : (input?.args != null ? JSON.stringify(input.args, null, 2) : '');
+
+  const view = createToolCard({ id, name, summary: skill || name });
+  view.body.innerHTML = `
+    <div class="task-view">
+      <div class="task-meta"></div>
+      <pre class="task-prompt"></pre>
+    </div>`;
+
+  view.body.querySelector('.task-meta').textContent = skill ? `技能：${skill}` : '技能调用';
+  const promptEl = view.body.querySelector('.task-prompt');
+  if (args) promptEl.textContent = args;
+  else promptEl.hidden = true;
+
+  const output = createOutputSection(view.body.querySelector('.task-view'));
+  bindResult(view, output);
+  return view;
+}
+
 function readLanguage(path) {
   const ext = (String(path).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase();
   const map = {
@@ -680,9 +1160,19 @@ function addToolUse({ id, name, input }) {
 
   // 非 Read 工具会打断连续的 Read 分组
   readGroup = null;
-  const view = SHELL_TOOLS.has(name)
-    ? createBashView({ id, name, input })
-    : createGenericView({ id, name, input });
+
+  let view;
+  if (SHELL_TOOLS.has(name)) view = createBashView({ id, name, input });
+  else if (name === 'Edit' || name === 'MultiEdit') view = createEditView({ id, name, input });
+  else if (name === 'Write') view = createWriteView({ id, name, input });
+  else if (name === 'Glob' || name === 'Grep') view = createSearchView({ id, name, input });
+  else if (name === 'TodoWrite') view = createTodoView({ id, name, input });
+  else if (name === 'WebFetch' || name === 'WebSearch') view = createWebView({ id, name, input });
+  else if (name === 'Task' || name === 'Agent') view = createTaskView({ id, name, input });
+  else if (name === 'Skill') view = createSkillView({ id, name, input });
+  else if (name === 'NotebookEdit') view = createNotebookView({ id, name, input });
+  else view = createGenericView({ id, name, input });
+
   toolCards.set(id, view);
 }
 
