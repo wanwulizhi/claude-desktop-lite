@@ -99,6 +99,17 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+let toastTimer = null;
+function showToast(text, isError = false) {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('error', isError);
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 6000 : 3000);
+}
+
 // GFM Markdown（marked + DOMPurify），代码高亮由 Prism 在 enhance 阶段完成
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -1855,6 +1866,7 @@ function baseName(p) {
 }
 
 async function loadSessions() {
+  closeSessionMenu();
   let sessions;
   try {
     sessions = await window.api.listSessions();
@@ -1888,6 +1900,11 @@ async function loadSessions() {
       el.dataset.id = s.id;
       el.innerHTML = `<div class="title-text">${escapeHtml(s.title)}</div><div class="time">${timeLabel(s.mtime)}</div>`;
       el.addEventListener('click', () => openSession(s));
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showSessionMenu(e.clientX, e.clientY, s);
+      });
       container.appendChild(el);
     }
   }
@@ -1901,6 +1918,89 @@ function setActive(id) {
   document.querySelectorAll('.session').forEach((el) => {
     el.classList.toggle('active', el.dataset.id === id);
   });
+}
+
+// 会话右键菜单
+
+let sessionMenuEl = null;
+
+function closeSessionMenu() {
+  if (!sessionMenuEl) return;
+  sessionMenuEl.remove();
+  sessionMenuEl = null;
+}
+
+function showSessionMenu(x, y, s) {
+  closeSessionMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  menu.setAttribute('role', 'menu');
+
+  const remove = document.createElement('div');
+  remove.className = 'ctx-item danger';
+  remove.setAttribute('role', 'menuitem');
+  remove.textContent = '删除对话';
+  remove.addEventListener('click', () => {
+    closeSessionMenu();
+    deleteSession(s);
+  });
+  menu.appendChild(remove);
+
+  // 先落到鼠标位置，再按视口边界翻转，避免菜单被裁掉
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  document.body.appendChild(menu);
+
+  const margin = 6;
+  const rect = menu.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth - margin) {
+    menu.style.left = `${Math.max(margin, x - rect.width)}px`;
+  }
+  if (y + rect.height > window.innerHeight - margin) {
+    menu.style.top = `${Math.max(margin, y - rect.height)}px`;
+  }
+  sessionMenuEl = menu;
+}
+
+async function deleteSession(s) {
+  // 主进程没重启时 preload 里没有这个方法，只刷新页面不会更新主进程代码
+  if (!window.api || typeof window.api.deleteSession !== 'function') {
+    showToast('当前主进程还是旧版本，请完全退出应用后重新启动（刷新页面无效）。', true);
+    return;
+  }
+
+  let res;
+  try {
+    res = await window.api.deleteSession(s.id, s.title);
+  } catch (err) {
+    showToast(`删除失败：${err?.message || err}`, true);
+    await loadSessions();
+    return;
+  }
+
+  if (!res) {
+    showToast('删除失败：主进程没有响应。', true);
+    await loadSessions();
+    return;
+  }
+  if (res.canceled) return;
+
+  if (!res.ok) {
+    showToast(`删除失败：${res.error || '未知错误'}`, true);
+    await loadSessions(); // 失败也刷新，清掉可能已失效的列表项
+    return;
+  }
+
+  // 删的是当前会话时，右侧内容和可能还在运行的进程一起清掉
+  if (state.sessionId === s.id) clearConversation();
+
+  await loadSessions();
+  if (res.trashed === false) {
+    showToast('会话已永久删除（未能移入回收站）。', true);
+  } else {
+    showToast('已删除对话');
+  }
 }
 
 /** 提前拉起 CLI，隐藏约 1.3s 的冷启动时间 */
@@ -2705,6 +2805,17 @@ document.addEventListener('drop', async (e) => {
   e.preventDefault();
   if (e.dataTransfer?.files?.length) await handleDroppedFiles(e.dataTransfer.files);
 });
+
+// 会话右键菜单：点击别处、滚动、失焦或 Esc 时关闭
+document.addEventListener('mousedown', (e) => {
+  if (sessionMenuEl && !sessionMenuEl.contains(e.target)) closeSessionMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSessionMenu();
+}, true);
+document.addEventListener('scroll', closeSessionMenu, true);
+window.addEventListener('blur', closeSessionMenu);
+window.addEventListener('resize', closeSessionMenu);
 
 inputEl.addEventListener('paste', async (e) => {
   const items = e.clipboardData?.items;

@@ -518,6 +518,22 @@ async function parseHistoryFile(file) {
   return entry;
 }
 
+/** 在 ~/.claude/projects 的各子目录下按会话 ID 定位 jsonl；ID 已做白名单校验 */
+function findSessionFile(sessionId) {
+  if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) return null;
+  if (!fs.existsSync(PROJECTS_DIR)) return null;
+
+  let dirNames;
+  try { dirNames = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
+  for (const dirName of dirNames) {
+    const full = path.join(PROJECTS_DIR, dirName, `${sessionId}.jsonl`);
+    try {
+      if (fs.statSync(full).isFile()) return full;
+    } catch { /* not here */ }
+  }
+  return null;
+}
+
 /**
  * 分页读取会话历史。
  *  - 不传 before：返回最后一页
@@ -526,17 +542,7 @@ async function parseHistoryFile(file) {
 async function loadHistory(sessionId, opts = {}) {
   const empty = { id: sessionId, cwd: '', items: [], hasMore: false, nextBefore: 0, total: 0 };
   if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) return empty;
-  if (!fs.existsSync(PROJECTS_DIR)) return empty;
-
-  let file = null;
-  let dirNames;
-  try { dirNames = fs.readdirSync(PROJECTS_DIR); } catch { return empty; }
-  for (const dirName of dirNames) {
-    const full = path.join(PROJECTS_DIR, dirName, `${sessionId}.jsonl`);
-    try {
-      if (fs.statSync(full).isFile()) { file = full; break; }
-    } catch { /* not here */ }
-  }
+  const file = findSessionFile(sessionId);
   if (!file) return empty;
 
   let entry;
@@ -562,6 +568,110 @@ async function loadHistory(sessionId, opts = {}) {
     nextBefore: start,
     total,
   };
+}
+
+// ---------------------------------------------------------------- 删除会话
+
+/** CLI 为每个会话生成的派生数据（文件历史、环境快照等） */
+const SESSION_SIDECAR_DIRS = [
+  path.join(os.homedir(), '.claude', 'file-history'),
+  path.join(os.homedir(), '.claude', 'session-env'),
+];
+
+function runtimeUsesSession(sessionId) {
+  return !!runtime && (runtime.sessionId === sessionId || runtime.resumeId === sessionId);
+}
+
+/** 停止当前 CLI 进程并等待退出；Windows 上进程仍持有文件句柄时无法删除 */
+function stopRuntimeAndWait(timeoutMs = 1500) {
+  const child = runtime?.child;
+  if (!child) { stopRuntime(); return Promise.resolve(); }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    child.once('exit', done);
+    stopRuntime();
+  });
+}
+
+/** 优先丢进回收站；失败时重试，最后降级为永久删除 */
+async function trashOrUnlink(file) {
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try {
+      await shell.trashItem(file);
+      return 'trash';
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+  try {
+    await fs.promises.unlink(file);
+    return 'unlink';
+  } catch (err) {
+    lastErr = err;
+  }
+  throw lastErr;
+}
+
+async function deleteSession(sessionId, title) {
+  if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) {
+    return { ok: false, error: '无效的会话 ID' };
+  }
+
+  const file = findSessionFile(sessionId);
+  if (!file) return { ok: false, error: '会话文件不存在，可能已被删除' };
+
+  if (win && !win.isDestroyed()) {
+    const choice = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['取消', '删除'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: '删除对话',
+      message: '确定要删除这个对话吗？',
+      detail: `“${String(title || sessionId).slice(0, 120)}”\n\n会话文件会被移到回收站。`,
+    });
+    if (choice.response !== 1) return { ok: false, canceled: true };
+  }
+
+  // 先停掉正在写这个会话的 CLI，避免文件被占用或被重新创建
+  if (runtimeUsesSession(sessionId)) await stopRuntimeAndWait();
+
+  let mode;
+  try {
+    mode = await trashOrUnlink(file);
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+
+  sessionMetaCache.delete(file);
+  historyCache.delete(file);
+
+  // 清理派生数据；失败不影响主流程
+  const projectDir = path.dirname(file);
+  const sidecars = [
+    path.join(projectDir, sessionId), // 子代理 transcript 等
+    ...SESSION_SIDECAR_DIRS.map((dir) => path.join(dir, sessionId)),
+  ];
+  for (const p of sidecars) {
+    try {
+      const st = await fs.promises.lstat(p);
+      if (st.isDirectory()) await fs.promises.rm(p, { recursive: true, force: true });
+      else await fs.promises.unlink(p);
+    } catch { /* 不存在或无法删除 */ }
+  }
+
+  return { ok: true, trashed: mode === 'trash' };
 }
 
 // ---------------------------------------------------------------- CLI 进程
@@ -1082,6 +1192,7 @@ ipcMain.handle('sessions:list', () => {
   return rows;
 });
 ipcMain.handle('sessions:history', (_e, id, opts) => loadHistory(id, opts));
+ipcMain.handle('sessions:delete', (_e, id, title) => deleteSession(id, title));
 
 ipcMain.handle('dialog:pickFolder', async () => {
   const res = await dialog.showOpenDialog(win, {

@@ -397,6 +397,69 @@ kbd {
   line-height: 1.6;
 }
 
+/* 会话右键菜单 */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 148px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-raise);
+  box-shadow: var(--shadow-lg);
+  animation: menu-in .1s ease-out;
+}
+
+.ctx-item {
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+
+.ctx-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ctx-item.danger { color: var(--err); }
+.ctx-item.danger:hover { background: var(--err-soft); color: var(--err); }
+
+/* 轻提示 */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 80;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raise);
+  box-shadow: var(--shadow-md);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+  transform: translateX(-50%);
+  animation: toast-in .16s ease-out;
+}
+
+.toast.error {
+  border-color: var(--err);
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .side-foot {
   display: flex;
   align-items: center;

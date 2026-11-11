@@ -22,7 +22,7 @@ Claude Code 保持一致：同一份会话、同一套权限、同一套斜杠�
 - **长回复更好读**：逐字流式输出，GitHub 风格 Markdown、表格、任务列表、代码高亮与一键复制。
 - **权限不再靠盲打 y/n**：每次工具调用弹出权限卡片，可「允许 / 拒绝 / 始终允许」。
 - **模型提问可以直接点选**：`AskUserQuestion` 渲染成单选、多选或自由输入弹窗，答案自动回传。
-- **会话、项目、模型都在侧栏和顶栏**：直接读取 `~/.claude/projects/**/*.jsonl`，随时回看历史。
+- **会话、项目、模型都在侧栏和顶栏**：直接读取 `~/.claude/projects/**/*.jsonl`，随时回看历史；右键任意会话可删除（移入回收站）。
 - **切换即时生效**：标准 / 接受编辑 / 计划 / YOLO 权限模式与模型均可在会话内切换。
 - **关闭即清理**：Windows 下关闭窗口会结束整个 CLI 进程树，不留后台任务。
 
@@ -42,15 +42,15 @@ npm install
 npm start
 ```
 
-也可以直接下载 [Release v0.4.5](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
-中的 `Claude.Desktop.Lite.Setup.0.4.5.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
+也可以直接下载 [Release v0.4.6](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
+中的 `Claude.Desktop.Lite.Setup.0.4.6.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
 
 ## 已实现
 
 - 聊天界面（**逐字流式输出**，Markdown 代码块，按消息 id 去重避免重复）
 - **图形化权限审批**：`can_use_tool` 请求变成卡片，可选 允许 / 拒绝 / 始终允许
 - **用户选择弹窗（AskUserQuestion）**：模型提问时显示选项卡片，支持单选、多选、自由输入；答案通过 `updatedInput.answers` 回写，YOLO 模式下同样有效
-- 项目 + 会话侧栏：直接读 `~/.claude/projects/**/*.jsonl`，支持浏览与 `--resume`
+- 项目 + 会话侧栏：直接读 `~/.claude/projects/**/*.jsonl`，支持浏览、`--resume` 与右键删除（含确认，默认移入回收站）
 - **附件**：📎 选择、拖拽、剪贴板粘贴图片；非图片文件拖入会转成 `@路径` 引用
 - **斜杠命令补全**：扫描 `~/.claude/commands` 与 `<项目>/.claude/commands`；另带 4 个内置提示模板
 - **模型切换**：右上角下拉选择（读取 `settings.json` 的模型别名），通过 CLI 的 `set_model` 控制消息**会话内即时生效**；也支持 `/model`、`/clear`、`/help` 客户端命令
@@ -142,7 +142,7 @@ claude --resume <session-id>
 
 ```bash
 npm run pack   # 解包版：dist/win-unpacked/Claude Desktop Lite.exe
-npm run dist   # NSIS 安装包：dist/Claude.Desktop.Lite.Setup.0.4.5.exe
+npm run dist   # NSIS 安装包：dist/Claude.Desktop.Lite.Setup.0.4.6.exe
 ```
 
 国内网络需要镜像：

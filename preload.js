@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   history: (id, opts) => ipcRenderer.invoke('sessions:history', id, opts),
+  deleteSession: (id, title) => ipcRenderer.invoke('sessions:delete', id, title),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
 
   listCommands: (cwd) => ipcRenderer.invoke('commands:list', cwd),
