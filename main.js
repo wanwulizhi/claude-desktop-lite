@@ -462,6 +462,12 @@ function appendHistoryRecord(rec, push, onCwd) {
         truncated: full.length > TOOL_RESULT_LIMIT,
         totalLength: full.length,
       });
+    } else if (b.type === 'thinking' && b.thinking) {
+      push({
+        kind: 'thinking',
+        text: b.thinking.slice(0, TOOL_RESULT_LIMIT),
+        truncated: b.thinking.length > TOOL_RESULT_LIMIT,
+      });
     }
   }
 }

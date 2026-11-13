@@ -49,6 +49,8 @@ let currentQuestion = null;
 const toolCards = new Map();
 const orphanToolResults = new Map();
 let readGroup = null;
+let currentTurn = null;
+let turnList = [];
 
 // 历史分页：当前页游标 + 渲染目标（加载更早时写入 fragment，避免触发滚动）
 const HISTORY_PAGE_SIZE = 300;
@@ -177,6 +179,15 @@ function scrollBottom() {
   updateScrollButton();
 }
 
+/** 过程组内部滚动：仅当用户本来就在底部时才跟随 */
+function stickProcessBody(el) {
+  const body = el?.closest?.('.tp-body');
+  if (!body) return;
+  if (body.scrollHeight - body.scrollTop - body.clientHeight < 80) {
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
 /** 统一的消息追加入口：历史分页时写入 fragment 且不滚动 */
 function appendNode(node) {
   renderTarget.appendChild(node);
@@ -188,14 +199,15 @@ function clearMessages() {
   toolCards.clear();
   orphanToolResults.clear();
   historyState = null;
-  readGroup = null;
   renderTarget = messagesEl;
   renderAutoScroll = true;
+  resetTurns();
 }
 
 function showEmpty() {
   const tpl = $('empty-template');
   messagesEl.innerHTML = '';
+  resetTurns();
   if (tpl) messagesEl.appendChild(tpl.content.cloneNode(true));
   bindEmptySuggestions();
 }
@@ -217,24 +229,53 @@ function removeEmpty() {
   if (empty) empty.remove();
 }
 
-/** 把历史块渲染到指定容器；fragment 模式下不滚动 */
-function renderHistoryItems(items, target, { autoScroll = false } = {}) {
+function renderHistoryItem(it) {
+  if (it.kind === 'user') addMessage('user', it.text);
+  else if (it.kind === 'assistant') addMessage('assistant', it.text);
+  else if (it.kind === 'tool_use') addToolUse(it);
+  else if (it.kind === 'tool_result') addToolResult(it);
+  else if (it.kind === 'thinking') addThinking(it.text, it.truncated);
+}
+
+/** 把历史块按用户消息切成“轮”，每轮一个过程组；fragment 模式下不滚动 */
+function renderHistoryItems(items, target, { autoScroll = false, openLast = true } = {}) {
   const prevTarget = renderTarget;
   const prevAuto = renderAutoScroll;
   renderTarget = target;
   renderAutoScroll = autoScroll;
   readGroup = null;
-  try {
-    for (const it of items) {
-      if (it.kind === 'user') addMessage('user', it.text);
-      else if (it.kind === 'assistant') addMessage('assistant', it.text);
-      else if (it.kind === 'tool_use') addToolUse(it);
-      else if (it.kind === 'tool_result') addToolResult(it);
+
+  const groups = [];
+  let current = null;
+  for (const it of items) {
+    if (it.kind === 'user') {
+      current = { user: it, items: [] };
+      groups.push(current);
+    } else {
+      if (!current) {
+        current = { user: null, items: [] };
+        groups.push(current);
+      }
+      current.items.push(it);
     }
+  }
+
+  try {
+    groups.forEach((group, index) => {
+      const turn = beginTurn({ historical: true, collapsePrevious: false });
+      if (group.user) addMessage('user', group.user.text);
+
+      const hasProcess = group.items.some((it) => it.kind === 'tool_use' || it.kind === 'thinking');
+      if (hasProcess) ensureProcess(turn);
+
+      for (const it of group.items) renderHistoryItem(it);
+      finalizeTurn(turn, { keepOpen: openLast && index === groups.length - 1 });
+    });
   } finally {
     readGroup = null;
     renderTarget = prevTarget;
     renderAutoScroll = prevAuto;
+    currentTurn = null;
   }
 }
 
@@ -246,7 +287,14 @@ function addMessage(kind, text) {
   div.innerHTML = `<div class="who">${kind === 'user' ? '你' : 'Claude'}</div>
                    <div class="bubble">${renderMarkdown(text)}</div>`;
   enhanceMarkdown(div.querySelector('.bubble'));
-  appendNode(div);
+
+  const turn = ensureTurn();
+  if (kind === 'user') {
+    turn.el.appendChild(div);
+    if (renderAutoScroll) scrollBottom();
+  } else {
+    appendAssistantNode(turn, div);
+  }
   return div;
 }
 
@@ -259,13 +307,19 @@ function addSystem(text, isError = false) {
   appendNode(div);
 }
 
-function addThinking(text) {
+function addThinking(text, truncated = false) {
   readGroup = null;
   removeEmpty();
+  const turn = ensureTurn();
+  recordActivity(turn, 'thinking');
+
   const div = document.createElement('div');
-  div.className = 'thinking';
-  div.innerHTML = `<details><summary>思考过程</summary><pre>${escapeHtml(text)}</pre></details>`;
-  appendNode(div);
+  div.className = 'tp-thinking';
+  div.innerHTML = '<div class="tp-thinking-label">思考</div><pre></pre>';
+  div.querySelector('pre').textContent = truncated
+    ? `${text}\n\n…（思考内容过长，已截断）`
+    : text;
+  appendProcessNode(turn, div);
 }
 
 function summarizeTool(name, input) {
@@ -307,6 +361,254 @@ const TOOL_ICONS = {
   NotebookEdit: NOTEBOOK_ICON,
   default: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
 };
+
+// ---------------------------------------------------------------- 单轮过程组
+// 参考 DSH：一轮 = 一次用户请求 → 最终回答。thinking 和工具调用都收进同一个
+// 可折叠过程组，完成后折叠为一行，最终回答留在组外。
+
+const THINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>';
+
+const PROCESS_ACTIVITY = {
+  thinking: { live: '思考中', done: '完成分析', icon: THINK_ICON },
+  read: { live: '正在读取文件', done: '读取文件', icon: TOOL_ICONS.Read },
+  readImage: { live: '正在读取图片', done: '读取图片', icon: TOOL_ICONS.Read },
+  search: { live: '正在搜索代码', done: '搜索代码', icon: TOOL_ICONS.Grep },
+  edit: { live: '正在修改文件', done: '修改文件', icon: TOOL_ICONS.Edit },
+  write: { live: '正在写入文件', done: '写入文件', icon: TOOL_ICONS.Write },
+  commands: { live: '正在执行命令', done: '执行命令', icon: TOOL_ICONS.Bash },
+  code: { live: '正在运行代码', done: '运行代码', icon: TOOL_ICONS.default },
+  webSearch: { live: '正在搜索网页', done: '搜索网页', icon: GLOBE_ICON },
+  webFetch: { live: '正在访问网页', done: '访问网页', icon: GLOBE_ICON },
+  subagents: { live: '正在协调子代理', done: '协调子代理', icon: TASK_ICON },
+  plan: { live: '正在更新计划', done: '更新计划', icon: TODO_ICON },
+  questions: { live: '正在提问', done: '提问', icon: TOOL_ICONS.default },
+  tools: { live: '正在调用工具', done: '调用工具', icon: TOOL_ICONS.default },
+  answering: { live: '正在回答', done: '回答', icon: THINK_ICON },
+};
+
+function activityForTool(name) {
+  if (SHELL_TOOLS.has(name)) return 'commands';
+  switch (name) {
+    case 'Read': return 'read';
+    case 'Glob':
+    case 'Grep': return 'search';
+    case 'Edit':
+    case 'MultiEdit': return 'edit';
+    case 'Write': return 'write';
+    case 'WebSearch': return 'webSearch';
+    case 'WebFetch': return 'webFetch';
+    case 'Task':
+    case 'Agent': return 'subagents';
+    case 'TodoWrite': return 'plan';
+    default: return 'tools';
+  }
+}
+
+function processActivity(kind) {
+  return PROCESS_ACTIVITY[kind] || PROCESS_ACTIVITY.tools;
+}
+
+function resetTurns() {
+  currentTurn = null;
+  turnList = [];
+  readGroup = null;
+}
+
+function beginTurn({ historical = false, collapsePrevious = true } = {}) {
+  if (!historical && currentTurn && !currentTurn.closed) {
+    finalizeTurn(currentTurn, { failed: true });
+  }
+  if (collapsePrevious) {
+    // 上一条已完成且用户没有手动操作过的过程组，在新一轮开始时收起
+    for (const t of turnList) {
+      if (t.closed && t.process && !t.process.manual && !t.process.failed) {
+        setProcessOpen(t, false);
+      }
+    }
+  }
+
+  const el = document.createElement('div');
+  el.className = 'turn';
+  renderTarget.appendChild(el);
+  if (renderAutoScroll) scrollBottom();
+
+  const turn = {
+    el,
+    process: null,
+    assistantEls: [],
+    counts: new Map(),
+    activityOrder: [],
+    activity: 'thinking',
+    startedAt: performance.now(),
+    endedAt: 0,
+    closed: false,
+    failed: false,
+    historical,
+  };
+  turnList.push(turn);
+  currentTurn = turn;
+  readGroup = null;
+  return turn;
+}
+
+function ensureTurn() {
+  return currentTurn || beginTurn();
+}
+
+function ensureProcess(turn) {
+  if (!turn) return null;
+  if (turn.process) return turn.process;
+
+  const el = document.createElement('div');
+  el.className = 'turn-process';
+  el.innerHTML = `
+    <button class="tp-head" type="button" aria-expanded="true">
+      <span class="tp-icon" aria-hidden="true"></span>
+      <span class="tp-title"></span>
+      <span class="tp-chevron" aria-hidden="true">${CHEVRON_ICON}</span>
+    </button>
+    <div class="tp-body"></div>`;
+
+  const process = {
+    el,
+    head: el.querySelector('.tp-head'),
+    iconEl: el.querySelector('.tp-icon'),
+    titleEl: el.querySelector('.tp-title'),
+    body: el.querySelector('.tp-body'),
+    open: true,
+    manual: false,
+    completed: false,
+    failed: false,
+  };
+  turn.process = process;
+
+  process.head.addEventListener('click', () => {
+    process.manual = true;
+    setProcessOpen(turn, !process.open);
+  });
+
+  turn.el.appendChild(el);
+  // 过程组出现之前已经渲染的中间 assistant 文本，按原顺序收进来
+  for (const node of turn.assistantEls) {
+    if (node.parentNode === turn.el) process.body.appendChild(node);
+  }
+
+  updateProcessHeader(turn);
+  return process;
+}
+
+function setProcessOpen(turn, open) {
+  const process = turn?.process;
+  if (!process) return;
+  process.open = !!open;
+  process.body.hidden = !process.open;
+  process.el.classList.toggle('open', process.open);
+  process.head.setAttribute('aria-expanded', String(process.open));
+}
+
+function setLiveActivity(turn, kind) {
+  if (!turn || turn.closed) return;
+  turn.activity = kind;
+  if (turn.process && !turn.process.completed) updateProcessHeader(turn);
+}
+
+function recordActivity(turn, kind) {
+  if (!turn) return;
+  if (!turn.counts.has(kind)) turn.activityOrder.push(kind);
+  turn.counts.set(kind, (turn.counts.get(kind) || 0) + 1);
+  turn.activity = kind;
+  ensureProcess(turn);
+  updateProcessHeader(turn);
+}
+
+function completedProcessTitle(turn) {
+  const labels = turn.activityOrder.slice(0, 3).map((kind) => processActivity(kind).done);
+  let title = labels.length ? labels.join('、') : '已完成';
+  if (turn.activityOrder.length > 3) title += ' 等';
+  const ms = (turn.endedAt || performance.now()) - turn.startedAt;
+  if (ms >= 800) title += ` · ${formatDuration(ms)}`;
+  if (turn.process?.failed) title = `执行失败 · ${title}`;
+  return title;
+}
+
+function updateProcessHeader(turn) {
+  const process = turn?.process;
+  if (!process) return;
+  const kind = turn.activity || 'thinking';
+  const info = processActivity(kind);
+  process.iconEl.innerHTML = info.icon;
+  process.titleEl.textContent = process.completed
+    ? completedProcessTitle(turn)
+    : `${info.live}…`;
+}
+
+function appendProcessNode(turn, node) {
+  const process = ensureProcess(turn);
+  if (!process) { appendNode(node); return; }
+  const stick = process.body.scrollHeight - process.body.scrollTop - process.body.clientHeight < 60;
+  process.body.appendChild(node);
+  if (stick) process.body.scrollTop = process.body.scrollHeight;
+  if (renderAutoScroll) scrollBottom();
+}
+
+function appendAssistantNode(turn, div) {
+  if (!turn) return;
+  const body = turn.process?.body;
+  const stick = body
+    ? body.scrollHeight - body.scrollTop - body.clientHeight < 80
+    : false;
+  const target = body || turn.el;
+  target.appendChild(div);
+  if (stick) body.scrollTop = body.scrollHeight;
+  turn.assistantEls.push(div);
+  if (!turn.historical) setLiveActivity(turn, 'answering');
+  if (renderAutoScroll) scrollBottom();
+}
+
+function finalizeTurn(turn, { failed = false, keepOpen = true } = {}) {
+  if (!turn || turn.closed) return;
+  turn.closed = true;
+  turn.endedAt = performance.now();
+  turn.failed = failed || turn.failed;
+
+  const process = turn.process;
+  if (!process) return;
+  process.completed = true;
+  process.failed = process.failed || turn.failed;
+
+  // 末尾连续的 assistant 文本属于最终回答，整体移到过程组外面
+  const tail = [];
+  let node = process.body.lastElementChild;
+  while (node && node.classList.contains('msg') && node.classList.contains('assistant')) {
+    tail.unshift(node);
+    node = node.previousElementSibling;
+  }
+  if (tail.length) {
+    for (const el of tail) process.body.removeChild(el);
+    let ref = process.el;
+    for (const el of tail) {
+      ref.after(el);
+      ref = el;
+    }
+  }
+
+  if (!process.body.childElementCount) {
+    process.el.remove();
+    turn.process = null;
+    if (renderAutoScroll) scrollBottom();
+    return;
+  }
+
+  updateProcessHeader(turn);
+  process.el.classList.toggle('failed', process.failed);
+  if (process.manual) {
+    setProcessOpen(turn, process.open);
+  } else {
+    setProcessOpen(turn, process.failed || keepOpen);
+  }
+  if (renderAutoScroll) scrollBottom();
+}
+
 const STATUS_ICONS = {
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>',
   err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -441,7 +743,7 @@ function createToolCard({ id, name, summary }) {
     }
   });
 
-  appendNode(card);
+  appendProcessNode(ensureTurn(), card);
   return view;
 }
 
@@ -1207,6 +1509,9 @@ function applyOrphanResult(id, view) {
 }
 
 function addToolUse({ id, name, input }) {
+  const turn = ensureTurn();
+  recordActivity(turn, activityForTool(name));
+
   if (name === 'Read') {
     const view = createReadEntry({ id, input });
     applyOrphanResult(id, view);
@@ -1237,9 +1542,12 @@ function addToolResult({ toolUseId, isError, text, truncated, totalLength }) {
   const result = { isError, text, truncated, totalLength };
   if (!view || typeof view.setResult !== 'function') {
     orphanToolResults.set(toolUseId, result);
-    return;
+  } else {
+    view.setResult(result);
   }
-  view.setResult(result);
+  // 工具结束后回到等待模型思考的状态
+  const turn = currentTurn;
+  if (turn?.process && !turn.process.completed) setLiveActivity(turn, 'thinking');
 }
 
 function handleStream(ev) {
@@ -1265,7 +1573,7 @@ function handleStream(ev) {
       const div = document.createElement('div');
       div.className = 'msg assistant';
       div.innerHTML = '<div class="who">Claude</div><div class="bubble"></div>';
-      renderTarget.appendChild(div);
+      appendAssistantNode(ensureTurn(), div);
       streamState.el = div;
     }
 
@@ -1280,6 +1588,7 @@ function handleStream(ev) {
         const stick = nearBottom();
         streamState.el.querySelector('.bubble').innerHTML = renderMarkdown(streamState.text);
         streamState.lastRender = performance.now();
+        stickProcessBody(streamState.el);
         if (stick) scrollBottom();
         else updateScrollButton();
       }, wait);
@@ -1301,6 +1610,7 @@ function handleStream(ev) {
     if (streamState.text.trim()) {
       lastStreamed = { id: streamState.id, text: streamState.text };
     }
+    stickProcessBody(streamState.el);
     streamState = null;
     if (stick) scrollBottom();
     else updateScrollButton();
@@ -1423,6 +1733,7 @@ async function addAttachmentDataUrl(dataUrl, name) {
 async function addUserMessage(text, images) {
   readGroup = null;
   removeEmpty();
+  const turn = beginTurn();
   const div = document.createElement('div');
   div.className = 'msg user';
   div.innerHTML = '<div class="who">你</div><div class="bubble"></div>';
@@ -1444,7 +1755,8 @@ async function addUserMessage(text, images) {
     bubble.appendChild(body);
   }
 
-  appendNode(div);
+  turn.el.appendChild(div);
+  if (renderAutoScroll) scrollBottom();
   return div;
 }
 
@@ -2121,7 +2433,7 @@ async function loadEarlier() {
 
     if (page.items && page.items.length) {
       const fragment = document.createDocumentFragment();
-      renderHistoryItems(page.items, fragment, { autoScroll: false });
+      renderHistoryItems(page.items, fragment, { autoScroll: false, openLast: false });
       const marker = $('load-earlier');
       if (marker && marker.nextSibling) messagesEl.insertBefore(fragment, marker.nextSibling);
       else messagesEl.appendChild(fragment);
@@ -2452,6 +2764,7 @@ window.api.onEvent((ev) => {
       if (ev.state === 'starting' && state.running) showWorking('正在启动 Claude…');
       if (ev.state === 'ready' && state.running) showWorking('等待模型响应…');
       if (ev.state === 'idle') {
+        finalizeTurn(currentTurn, { failed: true });
         setRunning(false);
         hideWorking();
         // 进程退出时不要留下无法回答的权限/提问弹窗
@@ -2500,6 +2813,7 @@ window.api.onEvent((ev) => {
     case 'result':
       perfLog('ui-result');
       hideWorking();
+      finalizeTurn(currentTurn, { failed: !!ev.isError });
       addMeta(ev);
       if (ev.isError) {
         const detail = ev.result ? `：${ev.result}` : '';
@@ -2548,6 +2862,7 @@ window.api.onEvent((ev) => {
       break;
 
     case 'error':
+      finalizeTurn(currentTurn, { failed: true });
       addSystem(ev.message, true);
       setRunning(false);
       hideWorking();
@@ -2746,6 +3061,7 @@ $('stop').addEventListener('click', () => {
   questionQueue = [];
   hideQuestion();
   resetStream();
+  finalizeTurn(currentTurn, { failed: true });
   setRunning(false);
   setStatus('idle');
   hideWorking();

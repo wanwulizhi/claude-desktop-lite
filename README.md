@@ -22,6 +22,7 @@ Claude Code 保持一致：同一份会话、同一套权限、同一套斜杠�
 - **长回复更好读**：逐字流式输出，GitHub 风格 Markdown、表格、任务列表、代码高亮与一键复制。
 - **权限不再靠盲打 y/n**：每次工具调用弹出权限卡片，可「允许 / 拒绝 / 始终允许」。
 - **模型提问可以直接点选**：`AskUserQuestion` 渲染成单选、多选或自由输入弹窗，答案自动回传。
+- **过程自动折叠**：thinking 和工具调用合并成一整轮的「过程组」，完成后折叠为一行摘要，只留最终回答。
 - **会话、项目、模型都在侧栏和顶栏**：直接读取 `~/.claude/projects/**/*.jsonl`，随时回看历史；右键任意会话可删除（移入回收站）。
 - **切换即时生效**：标准 / 接受编辑 / 计划 / YOLO 权限模式与模型均可在会话内切换。
 - **关闭即清理**：Windows 下关闭窗口会结束整个 CLI 进程树，不留后台任务。
@@ -42,8 +43,8 @@ npm install
 npm start
 ```
 
-也可以直接下载 [Release v0.4.6](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
-中的 `Claude.Desktop.Lite.Setup.0.4.6.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
+也可以直接下载 [Release v0.4.7](https://github.com/wanwulizhi/claude-desktop-lite/releases/latest)
+中的 `Claude.Desktop.Lite.Setup.0.4.7.exe`（未签名，SmartScreen 提示时选择「更多信息 → 仍要运行」）。
 
 ## 已实现
 
@@ -58,8 +59,9 @@ npm start
 - **权限模式选择**：输入框左侧切换 标准 / 接受编辑 / 计划 / YOLO，支持会话内热切换
 - **主题切换**：右上角按钮选择 跟随系统 / 亮色 / 暗色，选择会记住
 - **亮/暗双主题**：跟随系统，界面风格参照 dsh-claude-style 的 Claude 档
+- **单轮过程组**：thinking + 工具卡片按时间顺序收进同一个可折叠过程组；运行中显示实时活动（思考中 / 正在读取文件 / 正在执行命令），完成后折叠为「完成分析、读取文件、执行命令 · 12.0s」摘要；最新一轮保持展开，下一次发送时自动收起；中断或失败的过程组保持展开
 - 工具调用卡片（可展开查看参数与结果）
-- 会话历史回放
+- 会话历史回放（包含 thinking 与工具调用，并按用户消息重建过程组）
 - 停止按钮（Windows 上杀进程树）
 
 ## 健壮性
@@ -142,7 +144,7 @@ claude --resume <session-id>
 
 ```bash
 npm run pack   # 解包版：dist/win-unpacked/Claude Desktop Lite.exe
-npm run dist   # NSIS 安装包：dist/Claude.Desktop.Lite.Setup.0.4.6.exe
+npm run dist   # NSIS 安装包：dist/Claude.Desktop.Lite.Setup.0.4.7.exe
 ```
 
 国内网络需要镜像：
